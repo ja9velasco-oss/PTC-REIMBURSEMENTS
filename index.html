@@ -1488,32 +1488,9 @@ function buildPdfPreviewHtml() {
   let rows = '';
   (formData.days||[]).forEach(day => {
     const dLabel = day.date ? new Date(day.date+'T00:00:00').toLocaleDateString('en-PH',{day:'2-digit',month:'short',year:'2-digit'}) : '';
-    if(day.type==='commute') {
-      (day.legs||[]).forEach(leg => {
-        if(!leg.transport) return;
-        rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;">${leg.transport}: ${leg.from||''} – ${leg.to||''}</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">${fmtNum(leg.amount||0)}</td></tr>`;
-      });
-      if(day.meal_bf) rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;">Breakfast</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">185.00</td></tr>`;
-      if(day.meal_ln) rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;">Lunch</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">185.00</td></tr>`;
-    } else {
-      (day.vehicles||[]).forEach(v => {
-        const km2   = parseFloat(v.km)||0;
-        const fuel2 = parseFloat(v.fuel)||0;
-        const vt2   = VEHICLE_TYPES.find(x=>x.val===v.vtype);
-        const lbl2  = vt2 ? vt2.label : v.vtype;
-        let eff=0, liters2=0, maintRate2=0;
-        if(v.vtype==='company-2wheel'){ eff=30; liters2=km2/30; }
-        else if(v.vtype==='company-4wheel'){ eff=10; liters2=km2/10; }
-        else if(v.vtype==='private-2wheel'){ eff=25; liters2=km2/25; maintRate2=1; }
-        else if(v.vtype==='private-4wheel'){ eff=9;  liters2=km2/9;  maintRate2=3; }
-        const fuelAmt2  = liters2 * fuel2;
-        const maintAmt2 = km2 * maintRate2;
-        const total2    = fuelAmt2 + maintAmt2;
-        let parts2 = `GAS EXPENSE (${lbl2}) @ ₱${fuel2}/L — ${km2}km ÷ ${eff} = ${liters2.toFixed(2)}L × ₱${fuel2} = ₱${fmtNum(fuelAmt2)}`;
-        if(maintRate2 > 0) parts2 += ` + Maint: ${km2}km × ₱${maintRate2} = ₱${fmtNum(maintAmt2)}`;
-        rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;font-size:8.5pt;">${parts2}</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||v.note||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">${fmtNum(total2)}</td></tr>`;
-      });
-    }
+    // Form (Page 1) shows destination/route only — details are on breakdown page
+    const dayTot = dayTotal(day);
+    rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||'Transportation'}</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">${fmtNum(dayTot)}</td></tr>`;
   });
   // Empty rows
   const rowCount = (rows.match(/<tr/g)||[]).length;
