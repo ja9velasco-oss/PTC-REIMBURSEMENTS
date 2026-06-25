@@ -1,784 +1,133 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
-<title>PTC Reimbursement Form</title>
-<style>
-  :root {
-    --bg: #0f0f13;
-    --bg2: #1a1a22;
-    --bg3: #22222e;
-    --bg4: #2a2a38;
-    --border: rgba(255,255,255,0.08);
-    --border2: rgba(255,255,255,0.14);
-    --text: #f0f0f5;
-    --text2: #a0a0b8;
-    --text3: #606078;
-    --accent: #7c5cfc;
-    --accent2: #9b7ffe;
-    --accent-bg: rgba(124,92,252,0.15);
-    --accent-border: rgba(124,92,252,0.4);
-    --green: #4ade80;
-    --green-bg: rgba(74,222,128,0.12);
-    --red: #f87171;
-    --red-bg: rgba(248,113,113,0.12);
-    --amber: #fbbf24;
-    --radius: 12px;
-    --radius-sm: 8px;
-    --radius-lg: 16px;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
+// ═══════════════════════════════════════════════════════════════════
+// PTC REIMBURSEMENT SYSTEM — Google Apps Script Backend
+// ═══════════════════════════════════════════════════════════════════
+//
+// SETUP INSTRUCTIONS:
+// 1. Go to script.google.com → New Project → paste this entire file
+// 2. Replace the CONFIG values below with your actual IDs
+// 3. Deploy → New Deployment → Web App
+//    - Execute as: Me
+//    - Who has access: Anyone (or Anyone within PTC org if using Workspace)
+// 4. Copy the Web App URL → paste into your index.html as SUBMIT_URL
+// ═══════════════════════════════════════════════════════════════════
 
-  /* ── Desktop layout ── */
-  @media (min-width: 900px) {
-    body {
-      background: #08080c;
-      justify-content: flex-start;
-      padding: 40px 20px;
-    }
-    .app {
-      width: 100%;
-      max-width: 720px;
-      min-height: auto;
-      border-radius: 20px;
-      border: 1px solid var(--border2);
-      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
-      overflow: hidden;
-    }
-    .content {
-      padding: 28px 36px;
-      padding-bottom: 120px;
-    }
-    .bottom-bar {
-      position: sticky !important;
-      bottom: 0;
-      left: 0 !important;
-      transform: none !important;
-      width: 100% !important;
-      max-width: 100% !important;
-      border-top: 1px solid var(--border);
-      background: var(--bg2) !important;
-      padding: 16px 36px 20px !important;
-    }
-    .row2 { grid-template-columns: 1fr 1fr; }
-    .section-title { font-size: 22px; }
-    .day-card { border-radius: 14px; }
-    .steps { padding: 20px 36px; }
-    .header { padding: 20px 36px 16px; }
-  }
+const CONFIG = {
+  // ── Step 1: Paste your Google Sheet ID here ──────────────────────
+  // Open your sheet → copy the ID from the URL:
+  // https://docs.google.com/spreadsheets/d/COPY_THIS_PART/edit
+  SHEET_ID: 'YOUR_GOOGLE_SHEET_ID_HERE',
+  // ── Step 2: Paste your REIMBURSEMENT 2026 root folder ID here ────
+  // Open that folder in Drive → copy the ID from the URL:
+  // https://drive.google.com/drive/folders/COPY_THIS_PART
+  // Subfolders (June, July… and their cutoffs) are created automatically.
+  ROOT_FOLDER_ID: 'YOUR_REIMBURSEMENT_2026_FOLDER_ID_HERE',
 
-  /* ── Mobile layout (default) ── */
-  .app {
-    width: 100%;
-    max-width: 480px;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    background: var(--bg);
-    position: relative;
-  }
+  // ── Step 3: Your details ─────────────────────────────────────────
+  APPROVER_EMAIL: 'your.email@ptc.com.ph',        // Primary — you get notified on every submission
+  CC_EMAILS:      'second@ptc.com.ph,third@ptc.com.ph', // CC — separate multiple with a comma, no spaces
+  APPROVED_BY:    'Danny Gutierrez',               // Name pre-filled on the form
+  DOC_PREFIX:     'HR-PTC-F020',
+  COMPANY_NAME:   'Prince Technologies Corporation',
 
-  /* Header */
-  .header {
-    padding: 16px 20px 12px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
-    background: var(--bg);
-    z-index: 10;
-  }
-  .header-left { display: flex; align-items: center; gap: 10px; }
-  .logo-mark {
-    width: 32px; height: 32px; border-radius: 8px;
-    background: var(--accent-bg);
-    border: 1px solid var(--accent-border);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 14px; font-weight: 700; color: var(--accent2);
-  }
-  .header-title { font-size: 15px; font-weight: 600; color: var(--text); }
-  .header-sub { font-size: 11px; color: var(--text3); margin-top: 1px; }
-  .close-btn {
-    width: 32px; height: 32px; border-radius: 8px;
-    border: 1px solid var(--border2);
-    background: var(--bg3);
-    color: var(--text2); font-size: 16px;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer;
-  }
+  // ── Sheet column mapping (do not change unless your sheet layout changes) ─
+  // Based on your existing June tab layout:
+  //   Table1 (1st cutoff): A=Name B=Date C=Amount D=Form E=Breakdown G=Status I=Cutoff  — data starts row 25
+  //   Table2 (2nd cutoff): L=Name M=Date N=Amount O=Form P=Breakdown R=Status T=Cutoff  — data starts row 25
+  TABLE1_START_COL: 1,   // A
+  TABLE2_START_COL: 12,  // L
+  DATA_START_ROW:   25,  // Row where employee names begin
+  DATA_END_ROW:     54,  // Row where employee names end
 
-  /* Step indicator */
-  .steps {
-    padding: 16px 20px;
-    display: flex;
-    align-items: center;
-    gap: 0;
-  }
-  .step-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    flex: 1;
-    position: relative;
-  }
-  .step-item:not(:last-child)::after {
-    content: '';
-    position: absolute;
-    top: 14px;
-    left: 50%;
-    width: 100%;
-    height: 1px;
-    background: var(--border2);
-    z-index: 0;
-  }
-  .step-item.done:not(:last-child)::after,
-  .step-item.active:not(:last-child)::after {
-    background: var(--accent);
-  }
-  .step-dot {
-    width: 28px; height: 28px;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 600;
-    background: var(--bg3);
-    border: 1px solid var(--border2);
-    color: var(--text3);
-    position: relative; z-index: 1;
-    transition: all 0.2s;
-  }
-  .step-item.active .step-dot {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-  }
-  .step-item.done .step-dot {
-    background: var(--accent-bg);
-    border-color: var(--accent);
-    color: var(--accent2);
-  }
-  .step-label {
-    font-size: 10px;
-    color: var(--text3);
-    margin-top: 5px;
-    text-align: center;
-  }
-  .step-item.active .step-label { color: var(--accent2); }
-  .step-item.done .step-label { color: var(--text2); }
-
-  /* Scrollable content */
-  .content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px;
-    padding-bottom: 100px;
-  }
-
-  /* Section headings */
-  .section-title {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 4px;
-  }
-  .section-sub {
-    font-size: 13px;
-    color: var(--text2);
-    margin-bottom: 20px;
-  }
-
-  /* Form elements */
-  .field { margin-bottom: 14px; }
-  .field-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text2);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 6px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .req { color: var(--red); }
-  input[type="text"], input[type="email"], input[type="number"], input[type="date"], select, textarea {
-    width: 100%;
-    background: var(--bg2);
-    border: 1px solid var(--border2);
-    border-radius: var(--radius-sm);
-    color: var(--text);
-    font-size: 14px;
-    padding: 11px 14px;
-    outline: none;
-    transition: border-color 0.15s;
-    appearance: none;
-    -webkit-appearance: none;
-  }
-  input:focus, select:focus, textarea:focus {
-    border-color: var(--accent);
-    background: var(--bg3);
-  }
-  input::placeholder { color: var(--text3); }
-  select option { background: var(--bg3); }
-  textarea { resize: vertical; min-height: 72px; }
-
-  /* Two col row */
-  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-
-  /* Divider */
-  .divider {
-    border: none;
-    border-top: 1px solid var(--border);
-    margin: 20px 0;
-  }
-
-  /* Day card */
-  .day-card {
-    background: var(--bg2);
-    border: 1px solid var(--border2);
-    border-radius: var(--radius);
-    margin-bottom: 12px;
-    overflow: hidden;
-  }
-  .day-header {
-    padding: 12px 14px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--border);
-    cursor: pointer;
-    user-select: none;
-  }
-  .day-header-left { display: flex; align-items: center; gap: 10px; }
-  .day-badge {
-    background: var(--accent-bg);
-    border: 1px solid var(--accent-border);
-    border-radius: 6px;
-    padding: 2px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent2);
-  }
-  .day-date-label {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text);
-  }
-  .day-total {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--green);
-  }
-  .day-body { padding: 14px; }
-
-  /* Type toggle */
-  .type-toggle {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 14px;
-  }
-  .type-btn {
-    flex: 1;
-    padding: 8px 6px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border2);
-    background: var(--bg3);
-    color: var(--text2);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.15s;
-  }
-  .type-btn.active {
-    background: var(--accent-bg);
-    border-color: var(--accent-border);
-    color: var(--accent2);
-  }
-
-  /* Leg row */
-  .leg-row {
-    background: var(--bg3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 12px;
-    margin-bottom: 8px;
-  }
-  .leg-row-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-  }
-  .leg-num {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text3);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .leg-amount {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--amber);
-  }
-  .remove-btn {
-    width: 24px; height: 24px;
-    border-radius: 6px;
-    border: 1px solid var(--border2);
-    background: var(--red-bg);
-    color: var(--red);
-    font-size: 14px;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  /* Meal checkbox row */
-  .meal-row {
-    background: var(--bg3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 12px 14px;
-    margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .meal-left { display: flex; align-items: center; gap: 10px; }
-  .meal-label { font-size: 13px; color: var(--text); }
-  .meal-sub { font-size: 11px; color: var(--text3); }
-  .meal-amount { font-size: 13px; font-weight: 700; color: var(--amber); }
-  input[type="checkbox"] {
-    width: 18px; height: 18px;
-    accent-color: var(--accent);
-    cursor: pointer;
-  }
-
-  /* Add button */
-  .add-btn {
-    width: 100%;
-    padding: 10px;
-    border-radius: var(--radius-sm);
-    border: 1px dashed var(--border2);
-    background: transparent;
-    color: var(--accent2);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    transition: all 0.15s;
-    margin-top: 4px;
-  }
-  .add-btn:hover { background: var(--accent-bg); border-color: var(--accent-border); }
-
-  /* Day subtotal bar */
-  .day-subtotal {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
-    background: var(--bg3);
-    border-top: 1px solid var(--border);
-    margin-top: 10px;
-    border-radius: 0 0 8px 8px;
-  }
-  .day-subtotal-label { font-size: 12px; color: var(--text2); font-weight: 600; }
-  .day-subtotal-val { font-size: 15px; font-weight: 700; color: var(--green); }
-
-  /* Add day button */
-  .add-day-btn {
-    width: 100%;
-    padding: 14px;
-    border-radius: var(--radius);
-    border: 1px dashed var(--accent-border);
-    background: var(--accent-bg);
-    color: var(--accent2);
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    transition: all 0.15s;
-    margin-top: 8px;
-  }
-
-  /* Grand total */
-  .grand-total {
-    background: var(--bg2);
-    border: 1px solid var(--accent-border);
-    border-radius: var(--radius);
-    padding: 16px 18px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 20px;
-  }
-  .grand-total-label { font-size: 13px; font-weight: 600; color: var(--text2); }
-  .grand-total-val { font-size: 22px; font-weight: 700; color: var(--accent2); }
-
-  /* Upload area */
-  .upload-zone {
-    border: 2px dashed var(--border2);
-    border-radius: var(--radius);
-    padding: 32px 20px;
-    text-align: center;
-    background: var(--bg2);
-    cursor: pointer;
-    transition: all 0.15s;
-    margin-bottom: 16px;
-  }
-  .upload-zone:hover, .upload-zone.drag-over {
-    border-color: var(--accent);
-    background: var(--accent-bg);
-  }
-  .upload-icon { font-size: 36px; margin-bottom: 10px; }
-  .upload-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
-  .upload-sub { font-size: 12px; color: var(--text3); margin-bottom: 14px; }
-  .upload-gallery-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 9px 18px;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: var(--radius-sm);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .upload-hint { font-size: 11px; color: var(--text3); margin-top: 10px; }
-
-  /* Receipt preview grid */
-  .receipt-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin-bottom: 16px;
-  }
-  .receipt-thumb {
-    aspect-ratio: 3/4;
-    border-radius: var(--radius-sm);
-    background: var(--bg3);
-    border: 1px solid var(--border2);
-    overflow: hidden;
-    position: relative;
-  }
-  .receipt-thumb img { width: 100%; height: 100%; object-fit: cover; }
-  .receipt-thumb-remove {
-    position: absolute;
-    top: 4px; right: 4px;
-    width: 20px; height: 20px;
-    background: rgba(0,0,0,0.7);
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 11px;
-    cursor: pointer;
-    border: none;
-  }
-  .receipt-name {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    padding: 4px 6px;
-    background: rgba(0,0,0,0.6);
-    font-size: 9px;
-    color: var(--text2);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* Review section */
-  .review-card {
-    background: var(--bg2);
-    border: 1px solid var(--border2);
-    border-radius: var(--radius);
-    margin-bottom: 12px;
-    overflow: hidden;
-  }
-  .review-card-header {
-    padding: 12px 14px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .review-card-title { font-size: 13px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.04em; }
-  .review-card-body { padding: 14px; }
-  .review-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    padding: 6px 0;
-    border-bottom: 1px solid var(--border);
-    gap: 12px;
-  }
-  .review-row:last-child { border-bottom: none; }
-  .review-key { font-size: 13px; color: var(--text2); flex-shrink: 0; }
-  .review-val { font-size: 13px; color: var(--text); font-weight: 500; text-align: right; }
-
-  .review-day-block { margin-bottom: 14px; }
-  .review-day-title {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--accent2);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 8px;
-    display: flex;
-    justify-content: space-between;
-  }
-  .review-leg {
-    display: flex;
-    justify-content: space-between;
-    padding: 5px 0;
-    font-size: 13px;
-    color: var(--text2);
-    border-bottom: 1px solid var(--border);
-  }
-  .review-leg:last-child { border-bottom: none; }
-  .review-leg-val { color: var(--text); font-weight: 500; flex-shrink: 0; }
-
-  /* Info pill */
-  .info-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--green-bg);
-    border: 1px solid rgba(74,222,128,0.25);
-    border-radius: 20px;
-    padding: 4px 10px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--green);
-    margin-bottom: 16px;
-  }
-
-  /* Success screen */
-  .success-screen {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 40px 24px;
-    text-align: center;
-    min-height: 60vh;
-  }
-  .success-icon {
-    width: 80px; height: 80px;
-    border-radius: 50%;
-    background: var(--green-bg);
-    border: 2px solid var(--green);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 36px;
-    margin-bottom: 24px;
-    animation: pop 0.4s ease-out;
-  }
-  @keyframes pop {
-    0% { transform: scale(0.5); opacity: 0; }
-    70% { transform: scale(1.1); }
-    100% { transform: scale(1); opacity: 1; }
-  }
-  .success-title { font-size: 24px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
-  .success-sub { font-size: 14px; color: var(--text2); margin-bottom: 32px; line-height: 1.5; }
-  .req-id-box {
-    background: var(--bg2);
-    border: 1px solid var(--border2);
-    border-radius: var(--radius);
-    padding: 16px 24px;
-    margin-bottom: 32px;
-    width: 100%;
-  }
-  .req-id-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
-  .req-id-val { font-size: 22px; font-weight: 700; color: var(--accent2); font-family: 'SF Mono', monospace; }
-  .req-email-note { font-size: 12px; color: var(--text3); margin-top: 8px; }
-
-  /* Bottom bar */
-  .bottom-bar {
-    position: fixed;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 100%;
-    max-width: 480px;
-    padding: 12px 20px 24px;
-    background: linear-gradient(transparent, var(--bg) 30%);
-    /* desktop override handled in @media above */
-    display: flex;
-    gap: 10px;
-    z-index: 10;
-  }
-  .btn-back {
-    flex: 0 0 auto;
-    padding: 14px 20px;
-    border-radius: var(--radius);
-    border: 1px solid var(--border2);
-    background: var(--bg3);
-    color: var(--text2);
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .btn-back:hover { background: var(--bg4); }
-  .btn-continue {
-    flex: 1;
-    padding: 14px;
-    border-radius: var(--radius);
-    border: none;
-    background: var(--accent);
-    color: #fff;
-    font-size: 15px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .btn-continue:hover { background: var(--accent2); }
-  .btn-continue:active { transform: scale(0.98); }
-  .btn-new {
-    flex: 1;
-    padding: 14px;
-    border-radius: var(--radius);
-    border: 1px solid var(--border2);
-    background: var(--bg3);
-    color: var(--text2);
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  /* Error text */
-  .err { font-size: 11px; color: var(--red); margin-top: 4px; display: none; }
-  .err.show { display: block; }
-
-  /* Empty state */
-  .empty-state {
-    text-align: center;
-    padding: 32px 16px;
-    color: var(--text3);
-    font-size: 13px;
-  }
-  .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
-
-  /* Vehicle km info */
-  .calc-info {
-    background: var(--bg3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 10px 12px;
-    margin-top: 6px;
-    font-size: 12px;
-    color: var(--text2);
-    line-height: 1.6;
-  }
-  .calc-info strong { color: var(--amber); }
-
-  /* Cutoff badge */
-  .cutoff-info {
-    background: var(--bg2);
-    border: 1px solid var(--border2);
-    border-radius: var(--radius-sm);
-    padding: 10px 14px;
-    margin-bottom: 18px;
-    font-size: 12px;
-    color: var(--text2);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .cutoff-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--accent);
-    flex-shrink: 0;
-  }
-
-  input[type="file"] { display: none; }
-
-  /* Route arrow */
-  .route-arrow { color: var(--text3); margin: 0 4px; }
-</style>
-</head>
-<body>
-<div class="app" id="app">
-
-  <!-- Header -->
-  <div class="header">
-    <div class="header-left">
-      <div class="logo-mark">P</div>
-      <div>
-        <div class="header-title">New Reimbursement</div>
-        <div class="header-sub" id="step-label-header">Step 1 of 4</div>
-      </div>
-    </div>
-    <div class="close-btn" onclick="confirmClose()">✕</div>
-  </div>
-
-  <!-- Steps -->
-  <div class="steps" id="steps-bar">
-    <div class="step-item active" id="step-1">
-      <div class="step-dot">1</div>
-      <div class="step-label">Details</div>
-    </div>
-    <div class="step-item" id="step-2">
-      <div class="step-dot">2</div>
-      <div class="step-label">Receipt</div>
-    </div>
-    <div class="step-item" id="step-3">
-      <div class="step-dot">3</div>
-      <div class="step-label">Review</div>
-    </div>
-    <div class="step-item" id="step-4">
-      <div class="step-dot">4</div>
-      <div class="step-label">Submit</div>
-    </div>
-  </div>
-
-  <!-- Content area -->
-  <div class="content" id="content">
-    <!-- Rendered by JS -->
-  </div>
-
-  <!-- Bottom bar -->
-  <div class="bottom-bar" id="bottom-bar"></div>
-
-</div>
-
-<input type="file" id="file-input" accept="image/*,.pdf" multiple/>
-<input type="file" id="camera-input" accept="image/*" capture="environment" multiple/>
-
-<script>
-// ───────────────────────────────────────────────
-// CONFIG — replace with your deployed Apps Script URL
-// ───────────────────────────────────────────────
-const SUBMIT_URL = 'https://script.google.com/macros/s/AKfycbwQYPyUrILcy8qbJtHeONBgaKqhEpVPpQ6KORHglDIFomOMTamGjdELQFfUZrXWQSS_DQ/exec'; // Paste your new Web App URL here
+  // Column offsets from the table's start column (0-indexed)
+  // Table1: A(0)=Name, B(1)=Date, C(2)=Amount, D(3)=Form, E(4)=Breakdown, skip F, G(6)=Status, skip H, I(8)=Cutoff
+  // Table2: L(0)=Name, M(1)=Date, N(2)=Amount, O(3)=Form, P(4)=Breakdown, skip Q, R(6)=Status, skip S, T(8)=Cutoff
+  COL_NAME:       0,
+  COL_DATE:       1,
+  COL_AMOUNT:     2,
+  COL_FORM:       3,
+  COL_BREAKDOWN:  4,
+  COL_STATUS:     6,
+  COL_CUTOFF:     8,
+};
 
 // ───────────────────────────────────────────────
-// Auto-detect cutoff from today's date
-// 1st cutoff: 26th prev month → 10th current month
-// 2nd cutoff: 11th → 25th current month
+// Entry point — handles POST from the web form
 // ───────────────────────────────────────────────
-function detectCutoff() {
-  const now = new Date();
-  const day = now.getDate();
-  const month = now.getMonth();
-  const year = now.getFullYear();
+function doPost(e) {
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Content-Type': 'application/json',
+  };
+
+  try {
+    const payload = JSON.parse(e.postData.contents);
+    const result = processSubmission(payload);
+    return ContentService
+      .createTextOutput(JSON.stringify({ success: true, ...result }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    Logger.log('ERROR: ' + err.toString());
+    return ContentService
+      .createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// Handle CORS preflight
+function doGet(e) {
+  return ContentService
+    .createTextOutput(JSON.stringify({ status: 'PTC Reimbursement API running' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ───────────────────────────────────────────────
+// Main processor
+// ───────────────────────────────────────────────
+function processSubmission(data) {
+  // Log incoming data structure for debugging
+  Logger.log('Received data keys: ' + Object.keys(data || {}).join(', '));
+  Logger.log('Days count: ' + ((data && data.days) ? data.days.length : 'undefined'));
+
+  // Generate Request ID — always use server time as a real Date object
+  const reqId = generateReqId();
+  const submittedAt = new Date();  // server-side timestamp, always a valid Date
+
+  // 1. Get the correct pre-existing Drive folder for this cutoff
+  const folder = getDestinationFolder(submittedAt);
+
+  // 2. Generate combined PDF (Form + Breakdown + Receipts embedded on page 3)
+  const pdfUrl = generateCombinedPdf(data, reqId, submittedAt, folder);
+  Logger.log('PDF saved: ' + pdfUrl);
+
+  // 3. Log to Google Sheets
+  try {
+    logToSheet(data, reqId, submittedAt, pdfUrl);
+    Logger.log('Sheet updated successfully');
+  } catch(e) {
+    Logger.log('Sheet update failed: ' + e);
+    // PDF is already saved — don't throw, just log
+  }
+
+  // 4 & 5. Email notifications — wrapped in try/catch so they never block Drive/Sheet saving
+  try { sendEmployeeEmail(data, reqId, pdfUrl); } catch(e) { Logger.log('Employee email failed: ' + e); }
+  try { sendApproverEmail(data, reqId, submittedAt, pdfUrl); } catch(e) { Logger.log('Approver email failed: ' + e); }
+
+  return {
+    reqId,
+    pdfUrl,
+  };
+}
+
+// ───────────────────────────────────────────────
+// Drive folder management
+// ───────────────────────────────────────────────
+// Resolves the cutoff period from the submission date using the same
+// logic as the frontend detectCutoff() function.
+function resolveCutoff(submittedAt) {
+  const d = new Date(Utilities.formatDate(submittedAt, 'Asia/Manila', 'yyyy-MM-dd'));
+  const day = d.getDate();
+  const month = d.getMonth();   // 0-indexed
+  const year  = d.getFullYear();
 
   let cutoffNum, cutoffMonth, cutoffYear;
   if (day >= 11 && day <= 25) {
@@ -786,1220 +135,420 @@ function detectCutoff() {
   } else if (day >= 26) {
     cutoffNum = '1st';
     cutoffMonth = (month + 1) % 12;
-    cutoffYear = (month === 11) ? year + 1 : year;
+    cutoffYear  = (month === 11) ? year + 1 : year;
   } else {
     cutoffNum = '1st'; cutoffMonth = month; cutoffYear = year;
   }
 
   const MNAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const MSHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const prevMonth = MNAMES[(cutoffMonth - 1 + 12) % 12];
-
-  const dateRange = cutoffNum === '1st'
-    ? `26 ${prevMonth} – 10 ${MNAMES[cutoffMonth]} ${cutoffYear}`
-    : `11 – 25 ${MNAMES[cutoffMonth]} ${cutoffYear}`;
-
   return {
     num: cutoffNum,
-    month: MNAMES[cutoffMonth],
-    monthShort: MSHORT[cutoffMonth],
-    monthIndex: cutoffMonth,
-    year: cutoffYear,
+    folderMonth:  `${MNAMES[cutoffMonth]} ${cutoffYear}`,         // 'June 2026'
+    folderCutoff: cutoffNum === '1st'
+      ? '1st Cutoff (26th–10th)'
+      : '2nd Cutoff (11th–25th)',                                  // '2nd Cutoff (11th–25th)'
     label: `${cutoffNum} Cutoff — ${MNAMES[cutoffMonth]} ${cutoffYear}`,
-    dateRange,
-    folderMonth: `${MNAMES[cutoffMonth]} ${cutoffYear}`,
-    folderCutoff: cutoffNum === '1st' ? '1st Cutoff (26th–10th)' : '2nd Cutoff (11th–25th)',
   };
 }
 
-const CUTOFF = detectCutoff();
+// Auto-creates the folder structure inside your REIMBURSEMENT 2026 root:
+//   REIMBURSEMENT 2026/
+//     June/                      ← month only, no year
+//       June 1st Cut Off/        ← or June 2nd Cut Off
+//         PDF saved here
+//
+// Existing folders are reused — never duplicated.
+function getDestinationFolder(submittedAt) {
+  const root   = DriveApp.getFolderById(CONFIG.ROOT_FOLDER_ID);
+  const cutoff = resolveCutoff(submittedAt);
+  const monthName = cutoff.folderMonth.split(' ')[0];   // 'June' only
+
+  // Layer 1: Month name only  e.g. "June"
+  const monthFolder = getOrCreate(root, monthName);
+
+  // Layer 2: Cutoff label  e.g. "June 2nd Cut Off"
+  const cutoffLabel  = `${monthName} ${cutoff.num === '1st' ? '1st' : '2nd'} Cut Off`;
+  const cutoffFolder = getOrCreate(monthFolder, cutoffLabel);
+
+  return cutoffFolder;
+}
+
+// Returns existing folder by name, or creates it if it doesn't exist
+function getOrCreate(parent, name) {
+  const iter = parent.getFoldersByName(name);
+  return iter.hasNext() ? iter.next() : parent.createFolder(name);
+}
 
 // ───────────────────────────────────────────────
-// State
-// ───────────────────────────────────────────────
-let currentStep = 1;
-let formData = {
-  requestor: '',
-  department: '',
-  email: '',
-  cutoff: CUTOFF.num,
-  days: []
-};
-let receipts = []; // {name, dataUrl, size}
-let generatedReqId = '';
+// Receipts are embedded directly in the PDF (Page 3) — no separate Drive upload needed
 
-// Get initials from full name e.g. "Janine E. Velasco" → "JEV"
+// ───────────────────────────────────────────────
+// PDF 1: Official Reimbursement Form
+// Matches the HR-PTC-F020 layout
+// ───────────────────────────────────────────────
+function generateCombinedPdf(data, reqId, submittedAt, folder) {
+  const submittedAt_ = (submittedAt instanceof Date) ? submittedAt : new Date(submittedAt);
+  const dateStr = Utilities.formatDate(submittedAt_, 'Asia/Manila', 'MMMM d, yyyy');
+  const cutoff  = resolveCutoff(submittedAt_);
+  const rows    = buildFormRows(data);
+
+  // ── PAGE 1: Reimbursement Form ──────────────────
+  const formPage = `
+    <div style="page-break-after:always;">
+      <div style="text-align:center;font-size:16pt;font-weight:bold;margin:8px 0 14px;letter-spacing:1px;">REIMBURSEMENT FORM</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:10pt;">
+        <tr>
+          <td style="border:1px solid #000;padding:4px 6px;font-weight:bold;width:80px;">Requestor:</td>
+          <td style="border:1px solid #000;padding:4px 6px;width:200px;">${data.requestor}</td>
+          <td style="border:1px solid #000;padding:4px 6px;font-weight:bold;width:60px;">Date:</td>
+          <td style="border:1px solid #000;padding:4px 6px;">${dateStr}</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #000;padding:4px 6px;"></td><td style="border:1px solid #000;padding:4px 6px;"></td>
+          <td style="border:1px solid #000;padding:4px 6px;font-weight:bold;">Department:</td>
+          <td style="border:1px solid #000;padding:4px 6px;">${data.department}</td>
+        </tr>
+      </table>
+      <table style="width:100%;border-collapse:collapse;font-size:9.5pt;">
+        <thead>
+          <tr style="background:#f0f0f0;">
+            <th style="border:1px solid #000;padding:4px 6px;width:90px;">DATES</th>
+            <th style="border:1px solid #000;padding:4px 6px;">PARTICULARS</th>
+            <th style="border:1px solid #000;padding:4px 6px;width:180px;">PURPOSE of the EXPENSE</th>
+            <th style="border:1px solid #000;padding:4px 6px;width:90px;text-align:right;">TOTAL AMOUNT</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `<tr style="background:#ffffdd;"><td style="border:1px solid #000;padding:3px 6px;">${r.date}</td><td style="border:1px solid #000;padding:3px 6px;">${r.particulars}</td><td style="border:1px solid #000;padding:3px 6px;">${r.purpose}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">${r.amount}</td></tr>`).join('')}
+          ${Array(Math.max(0, 12 - rows.length)).fill('<tr style="background:#ffffdd;"><td style="border:1px solid #000;height:18px;"></td><td style="border:1px solid #000;"></td><td style="border:1px solid #000;"></td><td style="border:1px solid #000;"></td></tr>').join('')}
+        </tbody>
+        <tfoot>
+          <tr><td colspan="3" style="border:1px solid #000;padding:4px 12px;font-weight:bold;text-align:right;">TOTAL:</td><td style="border:1px solid #000;padding:4px 6px;font-weight:bold;font-size:12pt;text-align:right;">&#8369;${formatAmount(grandTotalFromData(data))}</td></tr>
+        </tfoot>
+      </table>
+      <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:9pt;">
+        <tr>
+          <td style="border:1px solid #000;padding:6px 10px;width:33%;height:60px;vertical-align:bottom;">PREPARED BY:<br/><br/><strong>${data.requestor}</strong><br/><span style="font-size:8pt;border-top:1px solid #000;display:block;padding-top:2px;">Signature over Printed Name</span></td>
+          <td style="border:1px solid #000;padding:6px 10px;width:33%;vertical-align:bottom;">APPROVED BY:<br/><br/><strong>${CONFIG.APPROVED_BY}</strong><br/><span style="font-size:8pt;border-top:1px solid #000;display:block;padding-top:2px;">Signature over Printed Name</span></td>
+          <td style="border:1px solid #000;padding:6px 10px;width:33%;vertical-align:top;">REMARKS:</td>
+        </tr>
+      </table>
+      <table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:9pt;">
+        <tr><td style="border:1px solid #000;padding:4px 8px;width:50%;"><strong>Document Number:</strong><br/>${CONFIG.DOC_PREFIX}</td><td style="border:1px solid #000;padding:4px 8px;width:25%;"><strong>Issuing Department:</strong></td><td style="border:1px solid #000;padding:4px 8px;text-align:center;font-style:italic;">HR - Compensation &amp; Benefits</td></tr>
+      </table>
+    </div>`;
+
+  // ── PAGE 2: Reimbursement Breakdown ────────────
+  const daysHtml = (data.days || []).map(day => {
+    const dayAmt = dayTotalFromData(day);
+    let legsHtml = '';
+    if (day.type === 'commute') {
+      const items = (day.legs || []).filter(l => l.transport).map(l =>
+        `<li style="margin-bottom:3px;"><strong>${l.transport}:</strong> ${l.from || '?'} – ${l.to || '?'} : <strong>${formatAmount(l.amount || 0)}</strong></li>`
+      ).join('');
+      const meals = [
+        day.meal_bf ? '<li>Breakfast (flat rate) : <strong>185.00</strong></li>' : '',
+        day.meal_ln ? '<li>Lunch (flat rate) : <strong>185.00</strong></li>' : '',
+        day.meal_dn ? '<li>Dinner (flat rate) : <strong>185.00</strong></li>' : '',
+      ].join('');
+      legsHtml = `<ul style="margin:4px 0;padding-left:20px;">${items}${meals}</ul>`;
+    } else {
+      legsHtml = (day.vehicles || []).map(v => {
+        const km    = parseFloat(v.km)   || 0;
+        const fuel  = parseFloat(v.fuel) || 0;
+        const label = vehicleLabel(v.vtype);
+        let fuelAmt = 0, liters = 0;
+        if      (v.vtype === 'company-2wheel') { liters = km/30; fuelAmt = liters*fuel; }
+        else if (v.vtype === 'company-4wheel') { liters = km/10; fuelAmt = liters*fuel; }
+        else if (v.vtype === 'private-2wheel') { liters = km/25; fuelAmt = liters*fuel; }
+        else if (v.vtype === 'private-4wheel') { liters = km/9;  fuelAmt = liters*fuel; }
+        const total = calcVehicle(v.vtype, v.km, v.fuel);
+        let lines = `<li style="margin-bottom:3px;"><strong>${label}</strong> — ${km}km @ ₱${fuel}/L</li>`;
+        lines += `<li style="margin-bottom:3px;padding-left:12px;">Fuel: ${liters.toFixed(2)}L × ₱${fuel} = <strong>${formatAmount(fuelAmt)}</strong></li>`;
+        if (v.vtype === 'private-2wheel' && km)
+          lines += `<li style="margin-bottom:3px;padding-left:12px;">Maintenance: ${km}km × ₱1.00 = <strong>${formatAmount(km*1)}</strong></li>`;
+        if (v.vtype === 'private-4wheel' && km)
+          lines += `<li style="margin-bottom:3px;padding-left:12px;">Maintenance: ${km}km × ₱3.00 = <strong>${formatAmount(km*3)}</strong></li>`;
+        lines += `<li style="margin-bottom:6px;padding-left:12px;list-style:none;font-weight:bold;">Subtotal: ${formatAmount(total)}</li>`;
+        return lines;
+      }).join('');
+      legsHtml = `<ul style="margin:4px 0;padding-left:20px;">${legsHtml}</ul>`;
+    }
+    return `<div style="margin-bottom:16px;">
+      <div style="font-weight:bold;margin-bottom:4px;">${day.date ? formatDate(day.date) : '—'} — ${day.route || ''}</div>
+      ${legsHtml}
+      <div style="text-align:right;font-weight:bold;border-top:1px solid #ccc;padding-top:4px;margin-top:4px;">TOTAL: ${formatAmount(dayAmt)}</div>
+    </div>`;
+  }).join('');
+
+  const breakdownPage = `
+    <div>
+      <div style="font-size:13pt;font-weight:bold;margin-bottom:4px;">Reimbursement Breakdown</div>
+      <div style="font-size:9pt;color:#555;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:14px;">
+        <strong>Name:</strong> ${data.requestor} &nbsp;|&nbsp; <strong>Department:</strong> ${data.department} &nbsp;|&nbsp;
+        <strong>Cutoff:</strong> ${cutoff.label} &nbsp;|&nbsp; <strong>Date Filed:</strong> ${dateStr} &nbsp;|&nbsp; <strong>Ref:</strong> ${reqId}
+      </div>
+      ${daysHtml}
+      <div style="text-align:right;font-weight:bold;font-size:13pt;border-top:2px solid #000;padding-top:8px;">TOTAL: &#8369;${formatAmount(grandTotalFromData(data))}</div>
+    </div>`;
+
+  // ── PAGE 3: Supporting Annexes (Receipts) ─────
+  let receiptsPage = '';
+  const receiptList = data.receipts || [];
+  if (receiptList.length > 0) {
+    const receiptGrid = receiptList.map((r, i) => {
+      const isImage = r.dataUrl && r.dataUrl.startsWith('data:image');
+      // Larger images, no filename shown — image speaks for itself
+      const thumb = isImage
+        ? `<img src="${r.dataUrl}" style="width:100%;height:260px;object-fit:contain;display:block;border:1px solid #ccc;border-radius:4px;background:#f9f9f9;"/>`
+        : `<div style="width:100%;height:260px;display:flex;align-items:center;justify-content:center;border:1px solid #ccc;border-radius:4px;background:#f9f9f9;font-size:9pt;color:#888;">PDF Receipt</div>`;
+      return `<div style="break-inside:avoid;margin-bottom:20px;">${thumb}</div>`;
+    }).join('');
+
+    receiptsPage = `<div style="page-break-before:always;">
+      <div style="font-size:13pt;font-weight:bold;margin-bottom:4px;">Supporting Annexes — Receipts</div>
+      <div style="font-size:9pt;color:#555;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:16px;">
+        <strong>Name:</strong> ${data.requestor} &nbsp;|&nbsp;
+        <strong>Ref:</strong> ${reqId} &nbsp;|&nbsp;
+        <strong>${receiptList.length} receipt(s)</strong>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        ${receiptGrid}
+      </div>
+    </div>`;
+  }
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+    <style>
+      @page { size: A4; margin: 20mm 18mm; }
+      body { font-family: Arial, sans-serif; font-size: 10pt; color: #000; }
+    </style>
+    </head><body>${formPage}${breakdownPage}${receiptsPage}</body></html>`;
+
+  const filename = makePdfFilename('REIMBURSEMENT FORM', data.requestor, submittedAt);
+  const pdfBlob  = HtmlService.createHtmlOutput(html).getBlob().getAs('application/pdf');
+  pdfBlob.setName(`${filename}.pdf`);
+  const file = folder.createFile(pdfBlob);
+  // Do NOT share with anyone — only folder owner (you) can access
+  return file.getUrl();
+}
+
+
+// ───────────────────────────────────────────────
+// Build table rows for the official Reimbursement Form PDF (Page 1)
+// ───────────────────────────────────────────────
+function buildFormRows(data) {
+  const rows = [];
+  (data.days || []).forEach(day => {
+    const dateFormatted = day.date ? formatDate(day.date) : '';
+    if (day.type === 'commute') {
+      // Page 1 shows destination/route only — leg details are on Page 2 breakdown
+      const commuteTotal = (day.legs||[]).reduce((s,l)=>s+(parseFloat(l.amount)||0),0)
+        + (day.meal_bf?185:0) + (day.meal_ln?185:0)
+        + (day.others||[]).reduce((s,o)=>s+(parseFloat(o.amount)||0),0);
+      rows.push({
+        date:        dateFormatted,
+        particulars: day.route || 'Transportation',
+        purpose:     day.route || '',
+        amount:      formatAmount(commuteTotal),
+      });
+    } else {
+      // Page 1 shows destination/route only — vehicle computation details are on Page 2 breakdown
+      const vehicleTotal = (day.vehicles||[]).reduce((s,v)=>s+calcVehicle(v.vtype,v.km,v.fuel),0)
+        + (day.meal_bf?185:0) + (day.meal_ln?185:0)
+        + (day.others||[]).reduce((s,o)=>s+(parseFloat(o.amount)||0),0);
+      rows.push({
+        date:        dateFormatted,
+        particulars: day.route || 'Transportation (Vehicle)',
+        purpose:     day.route || '',
+        amount:      formatAmount(vehicleTotal),
+      });
+    }
+  });
+  return rows;
+}
+
+// ───────────────────────────────────────────────
+// Write submission into existing sheet
+// Finds the correct month tab and table (1st or 2nd cutoff)
+// then appends to the next empty row in that table
+// ───────────────────────────────────────────────
+function logToSheet(data, reqId, submittedAt, pdfUrl) {
+  const ss      = SpreadsheetApp.openById(CONFIG.SHEET_ID);
+  const cutoff  = resolveCutoff(submittedAt);
+
+  // Find the month tab — e.g. "June" (matches your tab names May, June, July…)
+  const monthName = cutoff.folderMonth.split(' ')[0];  // 'June'
+  const sheet     = ss.getSheetByName(monthName);
+  if (!sheet) {
+    throw new Error(
+      `Sheet tab "${monthName}" not found in your Google Sheet. ` +
+      `Please make sure the tab exists and is named exactly "${monthName}".`
+    );
+  }
+
+  // Determine which table to write into based on cutoff
+  const isFirst  = cutoff.num === '1st';
+  const startCol = isFirst ? CONFIG.TABLE1_START_COL : CONFIG.TABLE2_START_COL;
+
+  // Find the employee's row by matching their name in the name column
+  // Names are pre-filled in rows 25–54 — we scan to find the matching row
+  const nameColIdx = startCol + CONFIG.COL_NAME;
+  let   targetRow  = null;
+
+  for (let r = CONFIG.DATA_START_ROW; r <= CONFIG.DATA_END_ROW; r++) {
+    const cellVal = sheet.getRange(r, nameColIdx).getValue();
+    if (cellVal && cellVal.toString().trim().toLowerCase() === data.requestor.trim().toLowerCase()) {
+      targetRow = r;
+      break;
+    }
+  }
+
+  if (!targetRow) {
+    throw new Error(
+      `Employee "${data.requestor}" not found in ${monthName} sheet ` +
+      `(checked rows ${CONFIG.DATA_START_ROW}–${CONFIG.DATA_END_ROW}, column ${nameColIdx}). ` +
+      `Please ensure the name matches exactly.`
+    );
+  }
+
+  // Format values
+  const dateStr  = Utilities.formatDate(submittedAt, 'Asia/Manila', 'MMMM dd, yyyy');
+  const total    = grandTotalFromData(data);
+  const pdfLink  = pdfUrl;
+
+  // Write each column using offset from table start
+  const setCell = (colOffset, value) => {
+    sheet.getRange(targetRow, startCol + colOffset).setValue(value);
+  };
+
+  setCell(CONFIG.COL_NAME,      data.requestor);
+  setCell(CONFIG.COL_DATE,      dateStr);
+  setCell(CONFIG.COL_AMOUNT,    total);
+  setCell(CONFIG.COL_FORM,      pdfLink);     // combined PDF link (Form + Breakdown)
+  setCell(CONFIG.COL_BREAKDOWN, pdfLink);     // same link — combined PDF covers both
+  setCell(CONFIG.COL_STATUS,    'Pending');
+  setCell(CONFIG.COL_CUTOFF,    cutoff.num === '1st' ? '1st' : '2nd');
+
+  Logger.log(`Written to ${monthName} row ${targetRow} — Table ${isFirst ? '1' : '2'} (${cutoff.label})`);
+}
+
+// ───────────────────────────────────────────────
+// Email notifications
+// ───────────────────────────────────────────────
+function sendEmployeeEmail(data, reqId, pdfUrl) {
+  if (!data.email) return;
+  const total   = formatAmount(grandTotalFromData(data));
+  const subject = `[PTC] Reimbursement Submitted — ${reqId}`;
+  const body    = `Hi ${data.requestor},\n\nYour reimbursement request has been submitted successfully.\n\n` +
+    `Request ID:   ${reqId}\n` +
+    `Total Amount: \u20B1${total}\n` +
+    `Cutoff:       ${resolveCutoff(new Date()).label}\n\n` +
+    `Your reimbursement form and breakdown (combined PDF) have been saved to the HR drive for review.\n` +
+    `You can preview your submitted form via the confirmation screen.\n\n` +
+    `HR - Compensation & Benefits will process your request for the next payroll.\n\n` +
+    `Prince Technologies Corporation`;
+  MailApp.sendEmail(data.email, subject, body);
+}
+
+function sendApproverEmail(data, reqId, submittedAt, pdfUrl) {
+  const total   = formatAmount(grandTotalFromData(data));
+  // Ensure submittedAt is a Date object — convert if it came in as string
+  const dateObj = (submittedAt instanceof Date) ? submittedAt : new Date(submittedAt);
+  const dateStr = Utilities.formatDate(dateObj, 'Asia/Manila', 'MMMM d, yyyy h:mm a');
+  const subject = `[PTC] New Reimbursement — ${data.requestor} (${reqId})`;
+  const body    = `A new reimbursement request has been submitted.\n\n` +
+    `Request ID:   ${reqId}\n` +
+    `Name:         ${data.requestor}\n` +
+    `Department:   ${data.department}\n` +
+    `Email:        ${data.email}\n` +
+    `Cutoff:       ${resolveCutoff(submittedAt).label}\n` +
+    `Total Amount: \u20B1${total}\n` +
+    `Submitted:    ${dateStr}\n\n` +
+    `Please review and update the status in the master sheet.`;
+  const mailOptions = {};
+  if (CONFIG.CC_EMAILS && CONFIG.CC_EMAILS.trim()) {
+    mailOptions.cc = CONFIG.CC_EMAILS;
+  }
+  MailApp.sendEmail(CONFIG.APPROVER_EMAIL, subject, body, mailOptions);
+}
+
+// ───────────────────────────────────────────────
+// Filename helpers
+// ───────────────────────────────────────────────
 function getInitials(name) {
   return name.trim().split(/\s+/).map(w => w[0] ? w[0].toUpperCase() : '').join('');
 }
-// Generate PDF filename e.g. "REIMBURSEMENT FORM JEV 06182026"
-function pdfFilename(type, name, date) {
+function makePdfFilename(type, name, date) {
   const ini = getInitials(name);
-  const d = date || new Date();
-  const mm = String(d.getMonth()+1).padStart(2,'0');
-  const dd = String(d.getDate()).padStart(2,'0');
-  const yyyy = d.getFullYear();
-  return `${type} ${ini} ${mm}${dd}${yyyy}`;
+  const datePart = Utilities.formatDate(date, 'Asia/Manila', 'MMddyyyy');
+  return `${type} ${ini} ${datePart}`;
 }
-
-// Employee roster — name must match exactly what's in your Google Sheet
-// Format: { name: 'Full Name', dept: 'Department' }
-// Update this list as employees join or leave
-// Employee roster — update names to match exactly what's in your Google Sheet
-const EMPLOYEES = [
-  'Allan Robert Sanchez',
-  'Allen Salomon',
-  'Alyssa April Narvaez',
-  'Angelica Montaño',
-  'Billy Nombrado',
-  'Danny Gutierrez',
-  'Earl Jaron Ponteras',
-  'Ivy Kaye Gurtiza',
-  'Janine Egas Velasco',
-  'Jan Khrizztiane Gaudiel',
-  'Jayson Esporna',
-  'JC Delos Santos',
-  'John Israel Dalida',
-  'John Pol Frace',
-  'Jonnel Balmores',
-  'Joshua Thiel Guardino',
-  'Justin Ruzzel De Los Santos',
-  'Khris Marie Cleofe Wahing',
-  'Ma. Divina Mae Lara',
-  'Maria Ellen Corpuz',
-  'Mark Toni Tagalogon',
-  'Mendelson Jr Daelo',
-  'Micko James Arellano',
-  'Myra Singson',
-  'Patrick Delos Santos',
-  'Ronny Boy Cambangay',
-  'Simon Yitshak Rosas',
-  'Tristan Jay Fernandez',
-  'Van Andrew Micabani',
-  'Vic Tagupa',
-  // Add more: 'First Last',
-];
-
-// All employees are DevOps — department is set automatically
-const EMPLOYEE_DEPT = 'DevOps';
-const VEHICLE_TYPES = [
-  { val: 'company-2wheel', label: 'Company 2-wheel', formula: 'km/30 × fuel' },
-  { val: 'company-4wheel', label: 'Company 4-wheel', formula: 'km/10 × fuel' },
-  { val: 'private-2wheel', label: 'Private 2-wheel', formula: 'km/25 × fuel + km×₱1' },
-  { val: 'private-4wheel', label: 'Private 4-wheel', formula: 'km/9 × fuel + km×₱3' },
-];
-const COMMUTE_TYPES = ['Jeep','Bus','Tricycle','Cab/Taxi','FX/UV Express','Bus (AC)','Drop-off (Company)','MRT/LRT','Other'];
 
 // ───────────────────────────────────────────────
-// Utilities
+// Calculation helpers (mirror of frontend JS)
 // ───────────────────────────────────────────────
-function fmt(n) {
-  return '₱' + parseFloat(n||0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
-}
-function fmtNum(n) {
-  return parseFloat(n||0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
-}
-function genId() {
-  const d = new Date();
-  return 'REQ-' + d.getFullYear().toString().slice(2) + String(d.getMonth()+1).padStart(2,'0') + '-' + String(Math.floor(Math.random()*9000)+1000);
-}
 function calcVehicle(type, km, fuel) {
-  km = parseFloat(km)||0; fuel = parseFloat(fuel)||0;
-  let liters=0, maint=0;
-  if(type==='company-2wheel') liters=km/30;
-  else if(type==='company-4wheel') liters=km/10;
-  else if(type==='private-2wheel'){ liters=km/25; maint=km*1; }
-  else if(type==='private-4wheel'){ liters=km/9; maint=km*3; }
-  return (liters*fuel)+maint;
+  km = parseFloat(km) || 0;
+  fuel = parseFloat(fuel) || 0;
+  let liters = 0, maint = 0;
+  if (type === 'company-2wheel') liters = km / 30;
+  else if (type === 'company-4wheel') liters = km / 10;
+  else if (type === 'private-2wheel') { liters = km / 25; maint = km * 1; }
+  else if (type === 'private-4wheel') { liters = km / 9; maint = km * 3; }
+  return (liters * fuel) + maint;
 }
-function dayTotal(day) {
-  let t=0;
-  if(day.type==='commute') {
-    (day.legs||[]).forEach(l=>{ t+=parseFloat(l.amount)||0; });
+
+function dayTotalFromData(day) {
+  if (!day) return 0;
+  let t = 0;
+  if (day.type === 'commute') {
+    (day.legs || []).forEach(l => { t += parseFloat(l.amount) || 0; });
   } else {
-    (day.vehicles||[]).forEach(v=>{ t+=calcVehicle(v.vtype,v.km,v.fuel); });
+    (day.vehicles || []).forEach(v => { t += calcVehicle(v.vtype, v.km, v.fuel); });
   }
-  if(day.meal_bf) t+=185;
-  if(day.meal_ln) t+=185;
-  if(day.meal_dn) t+=185;
-  (day.others||[]).forEach(o=>{ t+=parseFloat(o.amount)||0; });
+  if (day.meal_bf) t += 185;
+  if (day.meal_ln) t += 185;
+  if (day.meal_dn) t += 185;
+  (day.others || []).forEach(o => { t += parseFloat(o.amount) || 0; });
   return t;
 }
-function grandTotal() {
-  return formData.days.reduce((s,d)=>s+dayTotal(d),0);
-}
-function todayStr() {
-  return new Date().toISOString().split('T')[0];
-}
 
-// ───────────────────────────────────────────────
-// Step rendering
-// ───────────────────────────────────────────────
-function render() {
-  updateStepBar();
-  document.getElementById('step-label-header').textContent = `Step ${currentStep} of 4`;
-  const c = document.getElementById('content');
-  const b = document.getElementById('bottom-bar');
-  if(currentStep===1) { renderStep1(c,b); }
-  else if(currentStep===2) { renderStep2(c,b); }
-  else if(currentStep===3) { renderStep3(c,b); }
-  else if(currentStep===4) { renderStep4(c,b); }
+function grandTotalFromData(data) {
+  if (!data || !data.days) return 0;
+  return data.days.reduce((s, d) => s + dayTotalFromData(d), 0);
 }
 
-function updateStepBar() {
-  for(let i=1;i<=4;i++) {
-    const el = document.getElementById('step-'+i);
-    el.className = 'step-item' + (i<currentStep?' done':i===currentStep?' active':'');
-    const dot = el.querySelector('.step-dot');
-    dot.textContent = i<currentStep ? '✓' : i;
-  }
-}
-
-// ─── STEP 1: Details ───
-function renderStep1(c,b) {
-  let daysHtml = formData.days.map((d,i) => renderDayCard(d,i)).join('');
-  c.innerHTML = `
-    <div class="section-title">Expenses Details</div>
-    <div class="section-sub">Fill in your information and add your reimbursable expenses.</div>
-
-    <div class="field" style="position:relative;">
-      <div class="field-label">Full Name <span class="req">*</span></div>
-      <input type="text" id="f-name" value="${formData.requestor}"
-        placeholder="Type to search your name…"
-        autocomplete="off"
-        oninput="handleNameInput(this.value)"
-        onfocus="handleNameInput(this.value)"
-        onblur="setTimeout(hideNameDropdown, 180)"/>
-      <div id="name-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg3);border:1px solid var(--accent-border);border-radius:var(--radius-sm);z-index:50;max-height:200px;overflow-y:auto;margin-top:2px;"></div>
-      <div class="err" id="err-name">Please select your name from the list.</div>
-    </div>
-
-    <div class="field">
-      <div class="field-label">Cutoff Period</div>
-      <div style="background:var(--accent-bg);border:1px solid var(--accent-border);border-radius:var(--radius-sm);padding:11px 14px;display:flex;align-items:center;justify-content:space-between;">
-        <div>
-          <div style="font-size:14px;font-weight:700;color:var(--accent2);">${CUTOFF.label}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px;">${CUTOFF.dateRange}</div>
-        </div>
-        <div style="font-size:10px;color:var(--text3);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;">Auto-detected</div>
-      </div>
-    </div>
-    <div class="field">
-      <div class="field-label">Email Address <span class="req">*</span></div>
-      <input type="email" id="f-email" value="${formData.email}" placeholder="your.name@ptc.com.ph" oninput="formData.email=this.value"/>
-      <div class="err" id="err-email">Enter a valid email address.</div>
-    </div>
-
-    <hr class="divider"/>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-      <div>
-        <div style="font-size:15px;font-weight:700;">Expense Entries</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:2px;">Add one card per day</div>
-      </div>
-    </div>
-
-    <div id="days-container">${daysHtml}</div>
-    <div class="empty-state" id="empty-days" style="${formData.days.length?'display:none':''}">
-      <div class="icon">📋</div>
-      No entries yet. Add your first expense day below.
-    </div>
-    <button class="add-day-btn" onclick="addDay()">＋ Add Day</button>
-
-    ${formData.days.length ? `
-    <div class="grand-total">
-      <div>
-        <div class="grand-total-label">Total Reimbursable</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${formData.days.length} day(s)</div>
-      </div>
-      <div class="grand-total-val">${fmt(grandTotal())}</div>
-    </div>` : ''}
-  `;
-  b.innerHTML = `
-    <button class="btn-continue" onclick="validateStep1()">Continue →</button>
-  `;
-}
-
-
-function renderDayCard(day, idx) {
-  const legsHtml = day.type === 'commute' ? renderCommuteSections(day, idx) : renderVehicleSections(day, idx);
-  const tot = dayTotal(day);
-  return `
-  <div class="day-card" id="day-card-${idx}">
-    <div class="day-header" onclick="toggleDay(${idx})">
-      <div class="day-header-left">
-        <div class="day-badge">Day ${idx+1}</div>
-        <div class="day-date-label">${day.date || 'No date set'}</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <div class="day-total">${fmt(tot)}</div>
-        <div class="remove-btn" onclick="event.stopPropagation();removeDay(${idx})">✕</div>
-      </div>
-    </div>
-    <div class="day-body" id="day-body-${idx}" style="${day.collapsed?'display:none':''}">
-      <div class="field">
-        <div class="field-label">Date</div>
-        <input type="date" value="${day.date||''}" onchange="formData.days[${idx}].date=this.value;applyDefaultRoute(${idx},this.value);refreshDayHeader(${idx})"/>
-      </div>
-      <div class="field">
-        <div class="field-label">Destination <span style="font-weight:400;color:var(--text3);font-size:11px;">(shown on form — breakdown has full details)</span></div>
-        <input type="text" value="${day.route||''}" placeholder="e.g. PTC Silang – Toclong II-B Imus" oninput="formData.days[${idx}].route=this.value"/>
-      </div>
-      <div class="type-toggle">
-        <div class="type-btn ${day.type==='commute'?'active':''}" onclick="setDayType(${idx},'commute')">🚌 Commute</div>
-        <div class="type-btn ${day.type==='vehicle'?'active':''}" onclick="setDayType(${idx},'vehicle')">🏍️ Vehicle</div>
-      </div>
-      ${legsHtml}
-      <div class="day-subtotal">
-        <div class="day-subtotal-label">Day ${idx+1} Total</div>
-        <div class="day-subtotal-val">${fmt(tot)}</div>
-      </div>
-    </div>
-  </div>`;
-}
-
-function renderCommuteSections(day, idx) {
-  const legsHtml = (day.legs||[]).map((leg,li) => `
-    <div class="leg-row">
-      <div class="leg-row-header">
-        <div class="leg-num">Leg ${li+1}</div>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <div class="leg-amount">${leg.amount>0?fmt(leg.amount):'₱—'}</div>
-          <div class="remove-btn" onclick="removeLeg(${idx},${li})">✕</div>
-        </div>
-      </div>
-      <div class="field" style="margin-bottom:8px;">
-        <div class="field-label" style="margin-bottom:4px;">Transport Type</div>
-        <select onchange="formData.days[${idx}].legs[${li}].transport=this.value;rerender()">
-          <option value="">Select…</option>
-          ${COMMUTE_TYPES.map(t=>`<option value="${t}" ${leg.transport===t?'selected':''}>${t}</option>`).join('')}
-        </select>
-      </div>
-      <div class="row2" style="margin-bottom:8px;">
-        <div class="field" style="margin:0;">
-          <div class="field-label" style="margin-bottom:4px;">From</div>
-          <input type="text" value="${leg.from||''}" placeholder="Origin"
-            oninput="formData.days[${idx}].legs[${li}].from=this.value"/>
-        </div>
-        <div class="field" style="margin:0;">
-          <div class="field-label" style="margin-bottom:4px;">To</div>
-          <input type="text" value="${leg.to||''}" placeholder="Destination"
-            oninput="formData.days[${idx}].legs[${li}].to=this.value"/>
-        </div>
-      </div>
-      <div class="field" style="margin:0;">
-        <div class="field-label" style="margin-bottom:4px;">Fare Amount (₱) <span style="font-weight:400;color:var(--text3);">— enter 0 for free/drop-off</span></div>
-        <input type="text" inputmode="decimal" value="${leg.amount===0&&leg._touched?'0':leg.amount||''}" placeholder="0.00"
-          oninput="formData.days[${idx}].legs[${li}].amount=parseFloat(this.value)||0;formData.days[${idx}].legs[${li}]._touched=true;updateLegAmount(${idx},${li},this.value)"/>
-      </div>
-    </div>`).join('');
-
-  return `
-    ${legsHtml}
-    <button class="add-btn" onclick="addLeg(${idx})">＋ Add Transport Leg</button>
-    ${renderMealsAndOthers(day, idx)}
-  `;
-}
-
-function renderVehicleSections(day, idx) {
-  const vehs = (day.vehicles||[]).map((v,vi) => {
-    const computed = calcVehicle(v.vtype,v.km,v.fuel);
-    const vt = VEHICLE_TYPES.find(x=>x.val===v.vtype);
-    return `
-    <div class="leg-row">
-      <div class="leg-row-header">
-        <div class="leg-num">Entry ${vi+1}</div>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <div class="leg-amount">${computed>0?fmt(computed):'₱—'}</div>
-          <div class="remove-btn" onclick="removeVehicle(${idx},${vi})">✕</div>
-        </div>
-      </div>
-      <div class="field" style="margin-bottom:10px;">
-        <div class="field-label" style="margin-bottom:4px;">Vehicle Type</div>
-        <select onchange="formData.days[${idx}].vehicles[${vi}].vtype=this.value;rerender()">
-          <option value="">Select…</option>
-          ${VEHICLE_TYPES.map(t=>`<option value="${t.val}" ${v.vtype===t.val?'selected':''}>${t.label}</option>`).join('')}
-        </select>
-      </div>
-      <div class="row2">
-        <div class="field" style="margin:0;">
-          <div class="field-label" style="margin-bottom:4px;">Total KM</div>
-          <input type="text" inputmode="decimal" value="${v.km||''}" placeholder="e.g. 30"
-            oninput="formData.days[${idx}].vehicles[${vi}].km=this.value;updateVehicleAmount(${idx},${vi})"/>
-        </div>
-        <div class="field" style="margin:0;">
-          <div class="field-label" style="margin-bottom:4px;">Fuel Price/L (₱)</div>
-          <input type="text" inputmode="decimal" value="${v.fuel||''}" placeholder="e.g. 66.50"
-            oninput="formData.days[${idx}].vehicles[${vi}].fuel=this.value;updateVehicleAmount(${idx},${vi})"/>
-        </div>
-      </div>
-      ${vt && v.km && v.fuel ? `<div class="calc-info">${buildCalcBreakdown(v)}</div>` : ''}
-      <div class="field" style="margin-top:8px;margin-bottom:0;">
-        <div class="field-label" style="margin-bottom:4px;">Purpose / Notes</div>
-        <input type="text" value="${v.note||''}" placeholder="e.g. Site visit to CSB" oninput="formData.days[${idx}].vehicles[${vi}].note=this.value"/>
-      </div>
-    </div>`;
-  }).join('');
-
-  return `${vehs}
-    <button class="add-btn" onclick="addVehicle(${idx})">＋ Add Vehicle Entry</button>
-    ${renderMealsAndOthers(day, idx)}`;
-}
-
-// Shared meals + other expenses section used by both commute and vehicle
-function renderMealsAndOthers(day, idx) {
-  const others = (day.others||[]);
-  const othersHtml = others.map((o,oi) => `
-    <div class="leg-row" style="margin-bottom:8px;">
-      <div class="leg-row-header">
-        <div class="leg-num">Other ${oi+1}</div>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <div class="leg-amount">${o.amount>0?fmt(o.amount):'₱—'}</div>
-          <div class="remove-btn" onclick="removeOther(${idx},${oi})">✕</div>
-        </div>
-      </div>
-      <div class="field" style="margin-bottom:8px;">
-        <div class="field-label" style="margin-bottom:4px;">Description</div>
-        <input type="text" value="${o.desc||''}" placeholder="e.g. Gas, Subscription, Toll fee"
-          oninput="formData.days[${idx}].others[${oi}].desc=this.value"/>
-      </div>
-      <div class="field" style="margin:0;">
-        <div class="field-label" style="margin-bottom:4px;">Amount (₱)</div>
-        <input type="text" inputmode="decimal" value="${o.amount===0&&o._touched?'0':o.amount||''}" placeholder="0.00"
-          oninput="formData.days[${idx}].others[${oi}].amount=parseFloat(this.value)||0;formData.days[${idx}].others[${oi}]._touched=true;updateOtherAmount(${idx},${oi},this.value)"/>
-      </div>
-    </div>`).join('');
-
-  return `
-    <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;"/>
-    <div style="margin-bottom:8px;">
-      <div class="field-label" style="margin-bottom:8px;">Meals (Onsite/Field Work)</div>
-      <div class="meal-row">
-        <div class="meal-left">
-          <input type="checkbox" ${day.meal_bf?'checked':''} onchange="formData.days[${idx}].meal_bf=this.checked;rerender()"/>
-          <div><div class="meal-label">Breakfast</div><div class="meal-sub">₱185.00 flat rate</div></div>
-        </div>
-        <div class="meal-amount">₱185.00</div>
-      </div>
-      <div class="meal-row">
-        <div class="meal-left">
-          <input type="checkbox" ${day.meal_ln?'checked':''} onchange="formData.days[${idx}].meal_ln=this.checked;rerender()"/>
-          <div><div class="meal-label">Lunch</div><div class="meal-sub">₱185.00 flat rate</div></div>
-        </div>
-        <div class="meal-amount">₱185.00</div>
-      </div>
-      <div class="meal-row">
-        <div class="meal-left">
-          <input type="checkbox" ${day.meal_dn?'checked':''} onchange="formData.days[${idx}].meal_dn=this.checked;rerender()"/>
-          <div><div class="meal-label">Dinner</div><div class="meal-sub">₱185.00 flat rate</div></div>
-        </div>
-        <div class="meal-amount">₱185.00</div>
-      </div>
-    </div>
-    <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;"/>
-    <div class="field-label" style="margin-bottom:8px;">Other Expenses <span style="font-weight:400;color:var(--text3);">(Gas, Subscription, Toll, etc.)</span></div>
-    ${othersHtml}
-    <button class="add-btn" onclick="addOther(${idx})">＋ Add Other Expense</button>`;
-}
-
-function buildCalcBreakdown(v) {
-  const km=parseFloat(v.km)||0, fuel=parseFloat(v.fuel)||0;
-  let lines=[];
-  if(v.vtype==='company-2wheel') {
-    const L=(km/30);
-    lines=[`${km}km ÷ 30 = <strong>${fmtNum(L)}L</strong>`,
-           `${fmtNum(L)}L × ₱${fuel} = <strong>${fmt(L*fuel)}</strong>`,
-           `Total: <strong>${fmt(L*fuel)}</strong>`];
-  } else if(v.vtype==='company-4wheel') {
-    const L=(km/10);
-    lines=[`${km}km ÷ 10 = <strong>${fmtNum(L)}L</strong>`,
-           `${fmtNum(L)}L × ₱${fuel} = <strong>${fmt(L*fuel)}</strong>`,
-           `Total: <strong>${fmt(L*fuel)}</strong>`];
-  } else if(v.vtype==='private-2wheel') {
-    const L=(km/25),maint=km*1;
-    lines=[`${km}km ÷ 25 = <strong>${fmtNum(L)}L</strong>`,
-           `Fuel: ${fmtNum(L)}L × ₱${fuel} = <strong>${fmt(L*fuel)}</strong>`,
-           `Maint: ${km}km × ₱1 = <strong>${fmt(maint)}</strong>`,
-           `Total: <strong>${fmt(L*fuel+maint)}</strong>`];
-  } else if(v.vtype==='private-4wheel') {
-    const L=(km/9),maint=km*3;
-    lines=[`${km}km ÷ 9 = <strong>${fmtNum(L)}L</strong>`,
-           `Fuel: ${fmtNum(L)}L × ₱${fuel} = <strong>${fmt(L*fuel)}</strong>`,
-           `Maint: ${km}km × ₱3 = <strong>${fmt(maint)}</strong>`,
-           `Total: <strong>${fmt(L*fuel+maint)}</strong>`];
-  }
-  return lines.join(' → ');
-}
-
-// ─── STEP 2: Receipts ───
-function renderStep2(c,b) {
-  const thumbs = receipts.map((r,i) => `
-    <div class="receipt-thumb">
-      <img src="${r.dataUrl}" alt="${r.name}"/>
-      <button class="receipt-thumb-remove" onclick="removeReceipt(${i})">✕</button>
-      <div class="receipt-name">${r.name}</div>
-    </div>`).join('');
-
-  c.innerHTML = `
-    <div class="section-title">Upload Receipts</div>
-    <div class="section-sub">Upload photos of all your receipts and supporting documents.</div>
-
-    <!-- Drag & drop zone (desktop primary) -->
-    <div class="upload-zone" id="drop-zone"
-      ondragover="event.preventDefault();this.classList.add('drag-over')"
-      ondragleave="this.classList.remove('drag-over')"
-      ondrop="handleDrop(event)">
-      <div class="upload-icon">📎</div>
-      <div class="upload-title">Drag &amp; drop receipts here</div>
-      <div class="upload-sub">Supports JPG, PNG, PDF — max 10MB each</div>
-    </div>
-
-    <!-- Three upload action buttons -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;">
-      <button onclick="document.getElementById('camera-input').click()"
-        style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;"
-        onmouseenter="this.style.borderColor='var(--accent-border)';this.style.color='var(--accent2)'"
-        onmouseleave="this.style.borderColor='var(--border2)';this.style.color='var(--text2)'">
-        <span style="font-size:24px;">📷</span>
-        Take Photo
-      </button>
-      <button onclick="document.getElementById('file-input').click()"
-        style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;"
-        onmouseenter="this.style.borderColor='var(--accent-border)';this.style.color='var(--accent2)'"
-        onmouseleave="this.style.borderColor='var(--border2)';this.style.color='var(--text2)'">
-        <span style="font-size:24px;">🖼️</span>
-        Gallery
-      </button>
-      <button onclick="triggerFileUpload()"
-        style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;"
-        onmouseenter="this.style.borderColor='var(--accent-border)';this.style.color='var(--accent2)'"
-        onmouseleave="this.style.borderColor='var(--border2)';this.style.color='var(--text2)'">
-        <span style="font-size:24px;">📂</span>
-        Browse Files
-      </button>
-    </div>
-
-    ${receipts.length ? `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-      <div style="font-size:13px;font-weight:600;color:var(--text2);">${receipts.length} file(s) uploaded</div>
-      <div style="font-size:11px;color:var(--text3);">${(receipts.reduce((s,r)=>s+r.size,0)/1024/1024).toFixed(1)} MB total</div>
-    </div>
-    <div class="receipt-grid">${thumbs}</div>` : ''}
-
-    <div class="info-pill" style="margin-top:8px;">
-      <span>ℹ️</span> Bus/jeep tickets, gas receipts, meal receipts — upload all
-    </div>
-  `;
-
-  b.innerHTML = `
-    <button class="btn-back" onclick="goStep(1)">← Back</button>
-    <button class="btn-continue" onclick="goStep(3)">Continue →</button>
-  `;
-
-  document.getElementById('file-input').onchange = function(e) {
-    handleFiles(Array.from(e.target.files));
-    this.value='';
-  };
-  document.getElementById('camera-input').onchange = function(e) {
-    handleFiles(Array.from(e.target.files));
-    this.value='';
-  };
-}
-
-function triggerFileUpload() {
-  // Browse files — triggers gallery picker without camera on desktop
-  const inp = document.getElementById('file-input');
-  // Remove capture attr to ensure it opens file browser on desktop
-  inp.removeAttribute('capture');
-  inp.click();
-}
-
-// ─── STEP 3: Review ───
-function renderStep3(c,b) {
-  const daysReview = formData.days.map((day,i) => {
-    let items=[];
-    if(day.type==='commute') {
-      (day.legs||[]).forEach(l => {
-        if(l.transport) items.push({ desc: `${l.transport}: ${l.from||'?'} → ${l.to||'?'}`, val: fmt(l.amount) });
-      });
-      if(day.meal_bf) items.push({ desc: 'Breakfast (flat rate)', val: '₱185.00' });
-      if(day.meal_ln) items.push({ desc: 'Lunch (flat rate)', val: '₱185.00' });
-      if(day.meal_dn) items.push({ desc: 'Dinner (flat rate)', val: '₱185.00' });
-      (day.others||[]).filter(o=>o.desc).forEach(o => {
-        items.push({ desc: o.desc, val: fmt(o.amount||0) });
-      });
-    } else {
-      (day.vehicles||[]).forEach(v => {
-        const vt    = VEHICLE_TYPES.find(x=>x.val===v.vtype);
-        const km    = parseFloat(v.km)||0;
-        const fuel  = parseFloat(v.fuel)||0;
-        const label = vt ? vt.label : 'Vehicle';
-        // Fuel cost
-        let fuelAmt = 0;
-        if(v.vtype==='company-2wheel') fuelAmt = (km/30)*fuel;
-        else if(v.vtype==='company-4wheel') fuelAmt = (km/10)*fuel;
-        else if(v.vtype==='private-2wheel') fuelAmt = (km/25)*fuel;
-        else if(v.vtype==='private-4wheel') fuelAmt = (km/9)*fuel;
-        let eff3=0, liters3=0, maintRate3=0;
-        if(v.vtype==='company-2wheel'){ eff3=30; liters3=km/30; }
-        else if(v.vtype==='company-4wheel'){ eff3=10; liters3=km/10; }
-        else if(v.vtype==='private-2wheel'){ eff3=25; liters3=km/25; maintRate3=1; }
-        else if(v.vtype==='private-4wheel'){ eff3=9;  liters3=km/9;  maintRate3=3; }
-        const fuelAmt3  = liters3 * fuel;
-        const maintAmt3 = km * maintRate3;
-        let desc3 = `${label}: ${km}km ÷ ${eff3} = ${liters3.toFixed(2)}L × ₱${fuel} = ₱${fmtNum(fuelAmt3)}`;
-        if(maintRate3 > 0) desc3 += ` + Maint ₱${fmtNum(maintAmt3)}`;
-        items.push({ desc: desc3, val: fmt(fuelAmt3 + maintAmt3) });
-      });
-      if(day.meal_bf) items.push({ desc: 'Breakfast (flat rate)', val: '₱185.00' });
-      if(day.meal_ln) items.push({ desc: 'Lunch (flat rate)', val: '₱185.00' });
-      if(day.meal_dn) items.push({ desc: 'Dinner (flat rate)', val: '₱185.00' });
-      (day.others||[]).filter(o=>o.desc).forEach(o => {
-        items.push({ desc: o.desc, val: fmt(o.amount||0) });
-      });
-    }
-    return `
-      <div class="review-day-block">
-        <div class="review-day-title">
-          <span>Day ${i+1} — ${day.date||'No date'}</span>
-          <span style="color:var(--green)">${fmt(dayTotal(day))}</span>
-        </div>
-        ${day.route ? `<div style="font-size:12px;color:var(--text3);margin-bottom:6px;">📍 ${day.route}</div>` : ''}
-        ${items.map(item=>`
-          <div class="review-leg">
-            <span>${item.desc}</span>
-            <span class="review-leg-val">${item.val}</span>
-          </div>`).join('')}
-      </div>`;
-  }).join('');
-
-  c.innerHTML = `
-    <div class="section-title">Review Details</div>
-    <div class="section-sub">Please verify everything before submitting.</div>
-
-    <div class="review-card">
-      <div class="review-card-header">
-        <div class="review-card-title">Employee Info</div>
-        <div style="font-size:12px;color:var(--accent2);cursor:pointer;" onclick="goStep(1)">Edit</div>
-      </div>
-      <div class="review-card-body">
-        <div class="review-row"><span class="review-key">Name</span><span class="review-val">${formData.requestor||'—'}</span></div>
-        <div class="review-row"><span class="review-key">Department</span><span class="review-val">${formData.department||'—'}</span></div>
-        <div class="review-row"><span class="review-key">Email</span><span class="review-val">${formData.email||'—'}</span></div>
-        <div class="review-row"><span class="review-key">Cutoff Period</span><span class="review-val">${CUTOFF.label}</span></div>
-        <div class="review-row"><span class="review-key">Date Range</span><span class="review-val">${CUTOFF.dateRange}</span></div>
-      </div>
-    </div>
-
-    <div class="review-card">
-      <div class="review-card-header">
-        <div class="review-card-title">Expenses (${formData.days.length} day${formData.days.length!==1?'s':''})</div>
-        <div style="font-size:12px;color:var(--accent2);cursor:pointer;" onclick="goStep(1)">Edit</div>
-      </div>
-      <div class="review-card-body">
-        ${daysReview || '<div style="color:var(--text3);font-size:13px;">No entries.</div>'}
-      </div>
-    </div>
-
-    <div class="review-card">
-      <div class="review-card-header">
-        <div class="review-card-title">Receipts (${receipts.length})</div>
-        <div style="font-size:12px;color:var(--accent2);cursor:pointer;" onclick="goStep(2)">Edit</div>
-      </div>
-      <div class="review-card-body">
-        ${receipts.length ? `<div class="receipt-grid" style="margin:0;">${receipts.map((r,i)=>`<div class="receipt-thumb"><img src="${r.dataUrl}" alt="${r.name}"/><div class="receipt-name">${r.name}</div></div>`).join('')}</div>` :
-          '<div style="color:var(--text3);font-size:13px;">No receipts uploaded.</div>'}
-      </div>
-    </div>
-
-    <div class="grand-total" style="margin-bottom:8px;">
-      <div>
-        <div class="grand-total-label">Total Reimbursable Amount</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${formData.days.length} day(s) · ${CUTOFF.label}</div>
-      </div>
-      <div class="grand-total-val">${fmt(grandTotal())}</div>
-    </div>
-
-    <div style="font-size:12px;color:var(--text3);line-height:1.6;margin-top:12px;">
-      By submitting, you confirm that all details are accurate and receipts are authentic. This will be reviewed by HR - Compensation & Benefits.
-    </div>
-  `;
-
-  b.innerHTML = `
-    <button class="btn-back" onclick="goStep(2)">← Back</button>
-    <button class="btn-continue" onclick="submitForm()">Submit →</button>
-  `;
-}
-
-// ─── STEP 4: Success ───
-function renderStep4(c,b) {
-  const fname = pdfFilename('REIMBURSEMENT FORM', formData.requestor, new Date());
-  c.innerHTML = `
-    <div class="success-screen">
-      <div class="success-icon">✓</div>
-      <div class="success-title">You're all set!</div>
-      <div class="success-sub">Your reimbursement request has been submitted successfully. HR will review and process it for the <strong>${CUTOFF.label}</strong> payroll.</div>
-      <div class="req-id-box">
-        <div class="req-id-label">Request ID</div>
-        <div class="req-id-val">${generatedReqId}</div>
-        <div class="req-email-note">A confirmation has been sent to ${formData.email}</div>
-      </div>
-      <div style="width:100%;margin-bottom:8px;">
-        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Submitted Documents</div>
-        <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);overflow:hidden;">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);">
-            <div style="display:flex;align-items:center;gap:10px;">
-              <span style="font-size:18px;">📄</span>
-              <div>
-                <div style="font-size:13px;font-weight:600;">${fname}.pdf</div>
-                <div style="font-size:11px;color:var(--text3);">Form + Breakdown combined</div>
-              </div>
-            </div>
-            <div style="display:flex;gap:6px;">
-              <button onclick="showPdfPreview()" style="padding:6px 12px;border-radius:6px;border:1px solid var(--accent-border);background:var(--accent-bg);color:var(--accent2);font-size:12px;font-weight:600;cursor:pointer;">Preview</button>
-              <button onclick="downloadPdf()" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;">Download</button>
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;">
-            <div style="display:flex;align-items:center;gap:10px;">
-              <span style="font-size:18px;">📎</span>
-              <div>
-                <div style="font-size:13px;font-weight:600;">${receipts.length} Receipt(s)</div>
-                <div style="font-size:11px;color:var(--text3);">Saved to HR drive</div>
-              </div>
-            </div>
-            <div style="font-size:11px;color:var(--green);font-weight:600;">✓ Uploaded</div>
-          </div>
-        </div>
-      </div>
-      <div style="font-size:11px;color:var(--text3);line-height:1.6;text-align:center;">
-        Documents are saved securely to the HR drive.<br/>Only authorized personnel can access the files.
-      </div>
-    </div>
-
-    <!-- PDF Preview Modal -->
-    <div id="pdf-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;flex-direction:column;">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg2);border-bottom:1px solid var(--border);">
-        <div style="font-size:13px;font-weight:600;color:var(--text);">${fname}.pdf</div>
-        <button onclick="closePdfPreview()" style="width:32px;height:32px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
-      </div>
-      <div id="pdf-preview-body" style="flex:1;overflow-y:auto;padding:16px;background:var(--bg);"></div>
-    </div>
-  `;
-  b.innerHTML = `
-    <button class="btn-new" onclick="resetForm()">Submit Another</button>
-  `;
-}
-
-function downloadPdf() {
-  const fname = pdfFilename('REIMBURSEMENT FORM', formData.requestor, new Date());
-  const html = buildPdfPreviewHtml();
-  // Create a printable window for download/print
-  const win = window.open('', '_blank');
-  win.document.write(`<!DOCTYPE html>
-    <html><head><meta charset="UTF-8"/>
-    <title>${fname}</title>
-    <style>
-      body { font-family: Arial, sans-serif; font-size: 10pt; margin: 20px; }
-      @media print {
-        @page { size: A4; margin: 18mm; }
-        body { margin: 0; }
-      }
-    </style>
-    </head><body>${html}
-    <script>window.onload=function(){window.print();}<\/script>
-    </body></html>`);
-  win.document.close();
-}
-
-function showPdfPreview() {
-  const modal = document.getElementById('pdf-modal');
-  const body = document.getElementById('pdf-preview-body');
-  modal.style.display = 'flex';
-  body.innerHTML = buildPdfPreviewHtml();
-}
-function closePdfPreview() {
-  document.getElementById('pdf-modal').style.display = 'none';
-}
-
-function buildPdfPreviewHtml() {
-  const dateStr = new Date().toLocaleDateString('en-PH', {year:'numeric',month:'long',day:'numeric'});
-  const fname = pdfFilename('REIMBURSEMENT FORM', formData.requestor, new Date());
-  const bname = pdfFilename('REIMBURSEMENT BREAKDOWN', formData.requestor, new Date());
-
-  // Build rows for form
-  let rows = '';
-  (formData.days||[]).forEach(day => {
-    const dLabel = day.date ? new Date(day.date+'T00:00:00').toLocaleDateString('en-PH',{day:'2-digit',month:'short',year:'2-digit'}) : '';
-    if(day.type==='commute') {
-      (day.legs||[]).forEach(leg => {
-        if(!leg.transport) return;
-        rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;">${leg.transport}: ${leg.from||''} – ${leg.to||''}</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">${fmtNum(leg.amount||0)}</td></tr>`;
-      });
-      if(day.meal_bf) rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;">Breakfast</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">185.00</td></tr>`;
-      if(day.meal_ln) rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;">Lunch</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">185.00</td></tr>`;
-    } else {
-      (day.vehicles||[]).forEach(v => {
-        const km2   = parseFloat(v.km)||0;
-        const fuel2 = parseFloat(v.fuel)||0;
-        const vt2   = VEHICLE_TYPES.find(x=>x.val===v.vtype);
-        const lbl2  = vt2 ? vt2.label : v.vtype;
-        let eff=0, liters2=0, maintRate2=0;
-        if(v.vtype==='company-2wheel'){ eff=30; liters2=km2/30; }
-        else if(v.vtype==='company-4wheel'){ eff=10; liters2=km2/10; }
-        else if(v.vtype==='private-2wheel'){ eff=25; liters2=km2/25; maintRate2=1; }
-        else if(v.vtype==='private-4wheel'){ eff=9;  liters2=km2/9;  maintRate2=3; }
-        const fuelAmt2  = liters2 * fuel2;
-        const maintAmt2 = km2 * maintRate2;
-        const total2    = fuelAmt2 + maintAmt2;
-        let parts2 = `GAS EXPENSE (${lbl2}) @ ₱${fuel2}/L — ${km2}km ÷ ${eff} = ${liters2.toFixed(2)}L × ₱${fuel2} = ₱${fmtNum(fuelAmt2)}`;
-        if(maintRate2 > 0) parts2 += ` + Maint: ${km2}km × ₱${maintRate2} = ₱${fmtNum(maintAmt2)}`;
-        rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;font-size:8.5pt;">${parts2}</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||v.note||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">${fmtNum(total2)}</td></tr>`;
-      });
-    }
-  });
-  // Empty rows
-  const rowCount = (rows.match(/<tr/g)||[]).length;
-  for(let i=rowCount; i<12; i++) rows += '<tr style="background:#ffffdd"><td style="border:1px solid #000;height:18px;"> </td><td style="border:1px solid #000;"> </td><td style="border:1px solid #000;"> </td><td style="border:1px solid #000;"> </td></tr>';
-
-  // Build breakdown days
-  let breakdown = '';
-  (formData.days||[]).forEach(day => {
-    const dLabel = day.date ? new Date(day.date+'T00:00:00').toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'}) : '';
-    let items = '';
-    if(day.type==='commute') {
-      (day.legs||[]).filter(l=>l.transport).forEach(l => {
-        items += `<li style="margin-bottom:3px;"><strong>${l.transport}:</strong> ${l.from||''} – ${l.to||''} : <strong>${fmtNum(l.amount||0)}</strong></li>`;
-      });
-      if(day.meal_bf) items += '<li style="margin-bottom:3px;">Breakfast (flat rate) : <strong>185.00</strong></li>';
-      if(day.meal_ln) items += '<li style="margin-bottom:3px;">Lunch (flat rate) : <strong>185.00</strong></li>';
-      if(day.meal_dn) items += '<li style="margin-bottom:3px;">Dinner (flat rate) : <strong>185.00</strong></li>';
-      (day.others||[]).filter(o=>o.desc).forEach(o => {
-        items += `<li style="margin-bottom:3px;"><strong>${o.desc}</strong> : <strong>${fmtNum(o.amount||0)}</strong></li>`;
-      });
-    } else {
-      (day.vehicles||[]).forEach(v => {
-        const vt   = VEHICLE_TYPES.find(x=>x.val===v.vtype);
-        const km   = parseFloat(v.km)||0;
-        const fuel = parseFloat(v.fuel)||0;
-        const label = vt ? vt.label : v.vtype;
-        let fuelAmt = 0;
-        if(v.vtype==='company-2wheel') fuelAmt=(km/30)*fuel;
-        else if(v.vtype==='company-4wheel') fuelAmt=(km/10)*fuel;
-        else if(v.vtype==='private-2wheel') fuelAmt=(km/25)*fuel;
-        else if(v.vtype==='private-4wheel') fuelAmt=(km/9)*fuel;
-        const total = calcVehicle(v.vtype,v.km,v.fuel);
-        items += `<li style="margin-bottom:3px;"><strong>${label}</strong> — ${km}km @ ₱${fuel}/L</li>`;
-        items += `<li style="margin-bottom:3px;padding-left:12px;">Fuel cost : <strong>${fmtNum(fuelAmt)}</strong></li>`;
-        if(v.vtype==='private-2wheel' && km) items += `<li style="margin-bottom:3px;padding-left:12px;">Maintenance (${km}km × ₱1) : <strong>${fmtNum(km*1)}</strong></li>`;
-        if(v.vtype==='private-4wheel' && km) items += `<li style="margin-bottom:3px;padding-left:12px;">Maintenance (${km}km × ₱3) : <strong>${fmtNum(km*3)}</strong></li>`;
-        items += `<li style="margin-bottom:6px;padding-left:12px;list-style:none;"><strong>Subtotal: ${fmtNum(total)}</strong></li>`;
-      });
-      if(day.meal_bf) items += '<li style="margin-bottom:3px;">Breakfast (flat rate) : <strong>185.00</strong></li>';
-      if(day.meal_ln) items += '<li style="margin-bottom:3px;">Lunch (flat rate) : <strong>185.00</strong></li>';
-      if(day.meal_dn) items += '<li style="margin-bottom:3px;">Dinner (flat rate) : <strong>185.00</strong></li>';
-      (day.others||[]).filter(o=>o.desc).forEach(o => {
-        items += `<li style="margin-bottom:3px;"><strong>${o.desc}</strong> : <strong>${fmtNum(o.amount||0)}</strong></li>`;
-      });
-    }
-    breakdown += `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:4px;">${dLabel} — ${day.route||''}</div><ul style="margin:0;padding-left:18px;">${items}</ul><div style="text-align:right;font-weight:bold;border-top:1px solid #ccc;padding-top:4px;margin-top:4px;">TOTAL: ${fmt(dayTotal(day))}</div></div>`;
-  });
-
-  // Receipts annex
-  let receiptsSection = '';
-  if(receipts.length > 0) {
-    const thumbs = receipts.map((r,i) => {
-      const isImg = r.dataUrl && r.dataUrl.startsWith('data:image');
-      const thumb = isImg
-        ? `<img src="${r.dataUrl}" style="width:100%;height:130px;object-fit:contain;display:block;background:#f5f5f5;border-radius:4px;border:1px solid #ddd;"/>`
-        : `<div style="width:100%;height:130px;display:flex;align-items:center;justify-content:center;background:#f5f5f5;border-radius:4px;border:1px solid #ddd;font-size:9pt;color:#888;text-align:center;">PDF Receipt<br/>${r.name}</div>`;
-      return `<div style="break-inside:avoid;"><div>${thumb}</div><div style="font-size:9pt;color:#555;text-align:center;margin-top:4px;">${i+1}. ${r.name||'Receipt'}</div></div>`;
-    }).join('');
-    receiptsSection = `<div style="font-family:Arial,sans-serif;color:#000;background:#fff;padding:16px;border-radius:8px;margin-top:8px;">
-      <div style="font-size:13pt;font-weight:bold;margin-bottom:4px;">Supporting Annexes — Receipts</div>
-      <div style="font-size:9pt;color:#555;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:14px;">
-        <strong>Name:</strong> ${formData.requestor} &nbsp;|&nbsp; <strong>Ref:</strong> ${generatedReqId} &nbsp;|&nbsp; <strong>${receipts.length} receipt(s)</strong>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">${thumbs}</div>
-    </div>`;
-  }
-
-  return `<div style="font-family:Arial,sans-serif;font-size:10pt;color:#000;background:#fff;padding:16px;border-radius:8px;margin-bottom:8px;">
-    <div style="text-align:center;font-size:13pt;font-weight:bold;margin-bottom:12px;letter-spacing:1px;">REIMBURSEMENT FORM</div>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:10pt;">
-      <tr><td style="border:1px solid #000;padding:4px 6px;font-weight:bold;width:80px;">Requestor:</td><td style="border:1px solid #000;padding:4px 6px;">${formData.requestor}</td><td style="border:1px solid #000;padding:4px 6px;font-weight:bold;width:70px;">Date:</td><td style="border:1px solid #000;padding:4px 6px;">${dateStr}</td></tr>
-      <tr><td style="border:1px solid #000;padding:4px 6px;"></td><td style="border:1px solid #000;padding:4px 6px;"></td><td style="border:1px solid #000;padding:4px 6px;font-weight:bold;">Dept:</td><td style="border:1px solid #000;padding:4px 6px;">${formData.department}</td></tr>
-    </table>
-    <table style="width:100%;border-collapse:collapse;font-size:9.5pt;">
-      <thead><tr style="background:#f0f0f0;"><th style="border:1px solid #000;padding:4px 6px;">DATES</th><th style="border:1px solid #000;padding:4px 6px;">PARTICULARS</th><th style="border:1px solid #000;padding:4px 6px;">PURPOSE</th><th style="border:1px solid #000;padding:4px 6px;text-align:right;">AMOUNT</th></tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr><td colspan="3" style="border:1px solid #000;padding:4px 6px;font-weight:bold;text-align:right;">TOTAL:</td><td style="border:1px solid #000;padding:4px 6px;font-weight:bold;text-align:right;">₱${fmtNum(grandTotal())}</td></tr></tfoot>
-    </table>
-    <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:9pt;">
-      <tr><td style="border:1px solid #000;padding:6px 10px;width:33%;">PREPARED BY:<br/><br/><strong>${formData.requestor}</strong><br/><span style="font-size:8pt;color:#666;">Signature over Printed Name</span></td><td style="border:1px solid #000;padding:6px 10px;width:33%;">APPROVED BY:<br/><br/><strong>Janine Velasco</strong><br/><span style="font-size:8pt;color:#666;">Signature over Printed Name</span></td><td style="border:1px solid #000;padding:6px 10px;width:33%;">REMARKS:</td></tr>
-    </table>
-    <div style="border:1px solid #000;padding:4px 8px;margin-top:6px;font-size:9pt;display:flex;justify-content:space-between;"><span><strong>Document Number:</strong> HR-PTC-F020</span><span style="font-style:italic;">HR - Compensation &amp; Benefits</span></div>
-  </div>
-  <div style="font-family:Arial,sans-serif;font-size:10pt;color:#000;background:#fff;padding:16px;border-radius:8px;margin-bottom:8px;">
-    <div style="font-size:13pt;font-weight:bold;margin-bottom:4px;">Reimbursement Breakdown</div>
-    <div style="font-size:9pt;color:#555;margin-bottom:12px;border-bottom:1px solid #ccc;padding-bottom:8px;">
-      <strong>Name:</strong> ${formData.requestor} &nbsp;|&nbsp; <strong>Dept:</strong> ${formData.department} &nbsp;|&nbsp; <strong>Cutoff:</strong> ${CUTOFF.label} &nbsp;|&nbsp; <strong>Ref:</strong> ${generatedReqId}
-    </div>
-    ${breakdown}
-    <div style="text-align:right;font-weight:bold;font-size:12pt;border-top:2px solid #000;padding-top:8px;">TOTAL: ₱${fmtNum(grandTotal())}</div>
-  </div>
-  ${receiptsSection}`;
-}
-
-// ───────────────────────────────────────────────
-// Actions
-// ───────────────────────────────────────────────
-// Detect default route based on day of week
-// Monday → Home to PTC Silang Office
-// Thursday → PTC Silang Office to Home
-// Wednesday can also be Home if Thursday is holiday (user adjusts)
-function getDefaultRoute(dateStr) {
-  const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
-  const dow = d.getDay(); // 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat
-  if (dow === 1) return { route: 'Home to PTC Silang Office', from: 'Home', to: 'PTC Silang Office' };
-  if (dow === 4) return { route: 'PTC Silang Office to Home', from: 'PTC Silang Office', to: 'Home' };
-  if (dow === 3) return { route: 'PTC Silang Office to Home', from: 'PTC Silang Office', to: 'Home' }; // Wed if Thu is holiday
-  return { route: '', from: 'PTC Office', to: '' };
-}
-
-function addDay() {
-  const dateStr = todayStr();
-  const def = getDefaultRoute(dateStr);
-  formData.days.push({
-    date: dateStr,
-    route: def.route,
-    type: 'commute',
-    legs: [{ transport:'Drop-off (Company)', from: def.from, to: def.to, amount:0, _touched:true }],
-    vehicles: [],
-    meal_bf: false,
-    meal_ln: false,
-    meal_dn: false,
-    collapsed: false,
-    others: [],   // for Gas, Subscription, etc.
-  });
-  rerender();
-}
-function addOther(idx) {
-  if(!formData.days[idx].others) formData.days[idx].others=[];
-  formData.days[idx].others.push({ desc:'', amount:0, _touched:false });
-  rerender();
-}
-function removeOther(idx, oi) {
-  formData.days[idx].others.splice(oi,1);
-  rerender();
-}
-function updateOtherAmount(dayIdx, oi, val) {
-  const grandEl = document.querySelector('.grand-total-val');
-  const dayTotalEl = document.querySelector(`#day-card-${dayIdx} .day-total`);
-  const subtotalEl = document.querySelector(`#day-card-${dayIdx} .day-subtotal-val`);
-  const tot = dayTotal(formData.days[dayIdx]);
-  if(dayTotalEl) dayTotalEl.textContent = fmt(tot);
-  if(subtotalEl) subtotalEl.textContent = fmt(tot);
-  if(grandEl) grandEl.textContent = fmt(grandTotal());
-}
-function updateVehicleAmount(dayIdx, vi) {
-  const day = formData.days[dayIdx];
-  const v   = (day.vehicles||[])[vi];
-  if(!v) return;
-
-  const computed = calcVehicle(v.vtype, v.km, v.fuel);
-
-  // Update the leg amount badge
-  const legRows = document.querySelectorAll(`#day-card-${dayIdx} .leg-row`);
-  if(legRows[vi]) {
-    const badge = legRows[vi].querySelector('.leg-amount');
-    if(badge) badge.textContent = computed > 0 ? fmt(computed) : '₱—';
-
-    // Update calc-info text in-place — no full rerender needed
-    let calcEl = legRows[vi].querySelector('.calc-info');
-    const km   = parseFloat(v.km)||0;
-    const fuel = parseFloat(v.fuel)||0;
-    if(v.vtype && km && fuel) {
-      const calcHtml = buildCalcBreakdown(v) + buildMaintLine(v);
-      if(calcEl) {
-        calcEl.innerHTML = calcHtml;
-      } else {
-        // Create it if it doesn't exist yet
-        const notesField = legRows[vi].querySelector('input[placeholder="e.g. Site visit to CSB"]');
-        if(notesField) {
-          const div = document.createElement('div');
-          div.className = 'calc-info';
-          div.innerHTML = calcHtml;
-          notesField.parentElement.parentElement.insertBefore(div, notesField.parentElement);
-        }
-      }
-    } else if(calcEl) {
-      calcEl.innerHTML = '';
-    }
-  }
-
-  // Update day total + subtotal bar + grand total — no scroll
-  const dayTotalEl = document.querySelector(`#day-card-${dayIdx} .day-total`);
-  const subtotalEl = document.querySelector(`#day-card-${dayIdx} .day-subtotal-val`);
-  const grandEl    = document.querySelector('.grand-total-val');
-  const tot = dayTotal(day);
-  if(dayTotalEl) dayTotalEl.textContent = fmt(tot);
-  if(subtotalEl) subtotalEl.textContent = fmt(tot);
-  if(grandEl)    grandEl.textContent    = fmt(grandTotal());
-}
-
-// Returns maintenance cost line HTML for private vehicles
-function buildMaintLine(v) {
-  const km = parseFloat(v.km)||0;
-  if(!km) return '';
-  if(v.vtype==='private-2wheel') return ` → Maint: ${km}km × ₱1 = <strong>${fmt(km*1)}</strong>`;
-  if(v.vtype==='private-4wheel') return ` → Maint: ${km}km × ₱3 = <strong>${fmt(km*3)}</strong>`;
+function buildCalcText(v) {
+  const km = parseFloat(v.km) || 0, fuel = parseFloat(v.fuel) || 0;
+  if (v.vtype === 'company-2wheel') return `${km}÷30=${(km/30).toFixed(2)}L × ₱${fuel}`;
+  if (v.vtype === 'company-4wheel') return `${km}÷10=${(km/10).toFixed(2)}L × ₱${fuel}`;
+  if (v.vtype === 'private-2wheel') return `${km}÷25=${(km/25).toFixed(2)}L × ₱${fuel} + ${km}×₱1`;
+  if (v.vtype === 'private-4wheel') return `${km}÷9=${(km/9).toFixed(2)}L × ₱${fuel} + ${km}×₱3`;
   return '';
 }
 
-function applyDefaultRoute(idx, dateStr) {
-  const def = getDefaultRoute(dateStr);
-  if (!def.route) return; // no default for this day, don't overwrite
-  formData.days[idx].route = def.route;
-  // Update first leg from/to only if it hasn't been manually changed
-  const legs = formData.days[idx].legs || [];
-  if (legs.length > 0 && (legs[0].from === 'PTC Office' || legs[0].from === 'Home' || legs[0].from === 'PTC Silang Office' || legs[0].from === '')) {
-    legs[0].from = def.from;
-    legs[0].to   = def.to;
-  }
-  rerender();
+function vehicleLabel(vtype) {
+  const map = { 'company-2wheel': 'Company 2-wheel', 'company-4wheel': 'Company 4-wheel', 'private-2wheel': 'Private 2-wheel', 'private-4wheel': 'Private 4-wheel' };
+  return map[vtype] || vtype;
 }
 
-function removeDay(i) {
-  formData.days.splice(i,1);
-  rerender();
-}
-function toggleDay(i) {
-  formData.days[i].collapsed = !formData.days[i].collapsed;
-  rerender();
-}
-function setDayType(idx,type) {
-  formData.days[idx].type=type;
-  if(type==='vehicle' && !formData.days[idx].vehicles) formData.days[idx].vehicles=[];
-  if(type==='commute' && !formData.days[idx].legs) formData.days[idx].legs=[];
-  rerender();
-}
-function addLeg(idx) {
-  if(!formData.days[idx].legs) formData.days[idx].legs=[];
-  const legs = formData.days[idx].legs;
-  const prevTo = legs.length > 0 ? (legs[legs.length-1].to || '') : '';
-  legs.push({ transport:'', from: prevTo, to:'', amount:0, _touched:false });
-  rerender();
-}
-function removeLeg(idx,li) {
-  formData.days[idx].legs.splice(li,1);
-  rerender();
-}
-function addVehicle(idx) {
-  if(!formData.days[idx].vehicles) formData.days[idx].vehicles=[];
-  formData.days[idx].vehicles.push({ vtype:'', km:'', fuel:'', note:'' });
-  rerender();
-}
-function removeVehicle(idx,vi) {
-  formData.days[idx].vehicles.splice(vi,1);
-  rerender();
-}
-function refreshDayHeader(idx) {
-  const label = document.querySelector(`#day-card-${idx} .day-date-label`);
-  if(label) label.textContent = formData.days[idx].date || 'No date set';
+function formatAmount(n) {
+  return parseFloat(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// ── Name autocomplete ────────────────────────────────────────────
-function handleNameInput(val) {
-  const q = val.trim().toLowerCase();
-  const dd = document.getElementById('name-dropdown');
-  if(!dd) return;
-  if(!q) { dd.style.display='none'; return; }
-
-  const matches = EMPLOYEES.filter(e =>
-    e.toLowerCase().includes(q)
-  );
-
-  if(matches.length === 0) {
-    dd.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--text3);">No match found</div>';
-    dd.style.display = 'block';
-    return;
-  }
-
-  dd.innerHTML = matches.map(e => `
-    <div onmousedown="event.preventDefault();selectEmployee('${e.replace(/'/g,"\'")}');hideNameDropdown()"
-      style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);"
-      onmouseenter="this.style.background='var(--accent-bg)'"
-      onmouseleave="this.style.background=''">
-      <span style="font-size:13px;font-weight:600;color:var(--text);">${e}</span>
-    </div>`).join('');
-  dd.style.display = 'block';
-}
-
-function selectEmployee(name) {
-  formData.requestor  = name;
-  formData.department = EMPLOYEE_DEPT;  // always DevOps
-  const inp = document.getElementById('f-name');
-  if(inp) inp.value = name;
-  const errName = document.getElementById('err-name');
-  if(errName) errName.className = 'err';
-}
-
-function hideNameDropdown() {
-  const dd = document.getElementById('name-dropdown');
-  if(dd) dd.style.display = 'none';
-}
-
-// Update just the leg amount display + day total without full rerender
-// to avoid scroll-jump while typing fares
-function updateLegAmount(dayIdx, legIdx, val) {
-  const amt = parseFloat(val) || 0;
-  // Update the leg amount badge in the header
-  const legRows = document.querySelectorAll(`#day-card-${dayIdx} .leg-row`);
-  if(legRows[legIdx]) {
-    const badge = legRows[legIdx].querySelector('.leg-amount');
-    if(badge) badge.textContent = amt > 0 ? fmt(amt) : '₱—';
-  }
-  // Update day total in day header and subtotal bar
-  const dayTotalEl = document.querySelector(`#day-card-${dayIdx} .day-total`);
-  const subtotalEl = document.querySelector(`#day-card-${dayIdx} .day-subtotal-val`);
-  const tot = dayTotal(formData.days[dayIdx]);
-  if(dayTotalEl) dayTotalEl.textContent = fmt(tot);
-  if(subtotalEl) subtotalEl.textContent = fmt(tot);
-  // Also update the grand total card at the bottom of Step 1
-  const grandEl = document.querySelector('.grand-total-val');
-  if(grandEl) grandEl.textContent = fmt(grandTotal());
-}
-
-function rerender() {
-  const scrollY = document.getElementById('content').scrollTop;
-  render();
-  requestAnimationFrame(()=>{ document.getElementById('content').scrollTop = scrollY; });
-}
-
-function goStep(n) {
-  currentStep = n;
-  document.getElementById('content').scrollTop=0;
-  render();
-}
-
-// Returns {start, end} Date objects for the current cutoff window
-function getCutoffWindow() {
-  // 1st cutoff: 26th of prev month → 10th of cutoff month
-  // 2nd cutoff: 11th → 25th of cutoff month
-  const m = CUTOFF.monthIndex;
-  const y = CUTOFF.year;
-  if (CUTOFF.num === '1st') {
-    const prevM = (m - 1 + 12) % 12;
-    const prevY = m === 0 ? y - 1 : y;
-    return { start: new Date(prevY, prevM, 26), end: new Date(y, m, 10) };
-  } else {
-    return { start: new Date(y, m, 11), end: new Date(y, m, 25) };
-  }
-}
-
-function validateStep1() {
-  let ok=true;
-  const show=(id,show)=>{ const e=document.getElementById(id); if(e) e.className='err'+(show?' show':''); };
-  const nameValid = EMPLOYEES.includes(formData.requestor.trim());
-  if(!nameValid){ show('err-name',true); ok=false; } else show('err-name',false);
-  // Department is always DevOps — no validation needed
-  if(!formData.email.match(/^[^@]+@[^@]+\.[^@]+$/)){ show('err-email',true); ok=false; } else show('err-email',false);
-  if(!ok) return;
-  if(formData.days.length===0){ alert('Please add at least one expense day.'); return; }
-
-  // Validate all dates fall within the current cutoff window
-  const win = getCutoffWindow();
-  const badDates = [];
-  formData.days.forEach((day, i) => {
-    if(!day.date) return;
-    const d = new Date(day.date + 'T00:00:00');
-    if(d < win.start || d > win.end) {
-      badDates.push(`Day ${i+1} (${day.date})`);
-    }
-  });
-  if(badDates.length > 0) {
-    const winStr = CUTOFF.dateRange;
-    alert(`The following day(s) are outside the ${CUTOFF.label} period (${winStr}):\n\n${badDates.join('\n')}\n\nPlease correct the dates or submit under the right cutoff period.`);
-    return;
-  }
-
-  goStep(2);
-}
-
-function handleFiles(files) {
-  files.forEach(f => {
-    if(f.size > 10*1024*1024) { alert(`${f.name} exceeds 10MB.`); return; }
-    const reader = new FileReader();
-    reader.onload = e => {
-      receipts.push({ name:f.name, dataUrl:e.target.result, size:f.size });
-      rerender();
-    };
-    reader.readAsDataURL(f);
-  });
-}
-function handleDrop(e) {
-  e.preventDefault();
-  document.getElementById('drop-zone').classList.remove('drag-over');
-  handleFiles(Array.from(e.dataTransfer.files));
-}
-function removeReceipt(i) {
-  receipts.splice(i,1);
-  rerender();
-}
-
-async function submitForm() {
-  // Show loading state
-  const btn = document.querySelector('.btn-continue');
-  if(btn){ btn.textContent = 'Submitting…'; btn.disabled = true; }
-
-  const payload = {
-    requestor: formData.requestor,
-    department: formData.department,
-    email: formData.email,
-    cutoff: formData.cutoff,
-    days: formData.days,
-    receipts: receipts,
-  };
-
+function formatDate(dateStr) {
+  if (!dateStr) return '';
   try {
-    if(SUBMIT_URL && !SUBMIT_URL.includes('YOUR_NEW_APPS_SCRIPT_URL_HERE')) {
-      const res = await fetch(SUBMIT_URL, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if(!data.success) throw new Error(data.error || 'Submission failed.');
-      generatedReqId = data.reqId;
-    } else {
-      // Demo mode — no backend connected yet
-      await new Promise(r => setTimeout(r, 1200));
-      generatedReqId = genId();
-    }
-    currentStep = 4;
-    document.getElementById('content').scrollTop = 0;
-    render();
-  } catch(err) {
-    if(btn){ btn.textContent = 'Submit →'; btn.disabled = false; }
-    alert('Submission error: ' + err.message);
-  }
+    const d = new Date(dateStr + 'T00:00:00');
+    return Utilities.formatDate(d, 'Asia/Manila', 'd-MMM-yy');
+  } catch (e) { return dateStr; }
 }
 
-function resetForm() {
-  formData = { requestor:'', department:'', email:'', cutoff: CUTOFF.num, days:[] };
-  receipts = [];
-  generatedReqId = '';
-  currentStep = 1;
-  render();
+function generateReqId() {
+  const d = new Date();
+  const yy = d.getFullYear().toString().slice(2);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const rand = String(Math.floor(Math.random() * 9000) + 1000);
+  return `REQ-${yy}${mm}-${rand}`;
 }
-
-function confirmClose() {
-  if(formData.requestor || formData.days.length) {
-    if(confirm('Discard this reimbursement request?')) resetForm();
-  }
-}
-
-// Init
-render();
-</script>
-</body>
-</html>
