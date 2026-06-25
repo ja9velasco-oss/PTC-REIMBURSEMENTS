@@ -1040,6 +1040,14 @@ function renderDayCard(day, idx) {
         <div class="field-label">Date</div>
         <input type="date" value="${day.date||''}" onchange="formData.days[${idx}].date=this.value;applyDefaultRoute(${idx},this.value);refreshDayHeader(${idx})"/>
       </div>
+      ${idx > 0 ? `
+      <div class="field" style="margin-bottom:10px;">
+        <div class="field-label">Copy from another day</div>
+        <select onchange="copyFromDay(${idx}, parseInt(this.value));this.value=''" style="background:var(--bg3);border:1px solid var(--accent-border);border-radius:var(--radius-sm);color:var(--accent2);font-size:13px;padding:9px 14px;width:100%;">
+          <option value="">— Select a day to copy —</option>
+          ${buildCopyOptions(idx)}
+        </select>
+      </div>` : ''}
       <div class="field">
         <div class="field-label">Destination <span style="font-weight:400;color:var(--text3);font-size:11px;">(shown on form — breakdown has full details)</span></div>
         <input type="text" value="${day.route||''}" placeholder="e.g. PTC Silang – Toclong II-B Imus" oninput="formData.days[${idx}].route=this.value"/>
@@ -1754,6 +1762,27 @@ function buildMaintLine(v) {
   if(v.vtype==='private-2wheel') return ` → Maint: ${km}km × ₱1 = <strong>${fmt(km*1)}</strong>`;
   if(v.vtype==='private-4wheel') return ` → Maint: ${km}km × ₱3 = <strong>${fmt(km*3)}</strong>`;
   return '';
+}
+
+function buildCopyOptions(targetIdx) {
+  return formData.days.map((d, i) => {
+    if (i === targetIdx) return '';
+    const label = `Day ${i+1}${d.date ? ' (' + d.date + ')' : ''}${d.route ? ' — ' + d.route : ''}`;
+    return `<option value="${i}">${label}</option>`;
+  }).join('');
+}
+
+function copyFromDay(targetIdx, sourceIdx) {
+  const source = formData.days[sourceIdx];
+  if (!source) return;
+
+  // Deep copy the source day into the target, preserving the target's date
+  const targetDate = formData.days[targetIdx].date;
+  formData.days[targetIdx] = JSON.parse(JSON.stringify(source));
+  formData.days[targetIdx].date = targetDate;  // keep original date
+  formData.days[targetIdx].collapsed = false;
+
+  rerender();
 }
 
 function applyDefaultRoute(idx, dateStr) {
