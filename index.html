@@ -713,7 +713,82 @@
 
   /* Route arrow */
   .route-arrow { color: var(--text3); margin: 0 4px; }
+
+  /* Side drawer */
+  .drawer-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 200;
+  }
+  .drawer-overlay.open { display: block; }
+  .drawer {
+    position: fixed;
+    bottom: 0; left: 50%; transform: translateX(-50%) translateY(100%);
+    width: 100%; max-width: 480px;
+    background: var(--bg2);
+    border-radius: 20px 20px 0 0;
+    border-top: 1px solid var(--border2);
+    z-index: 201;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 0 0 32px;
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .drawer.open {
+    transform: translateX(-50%) translateY(0);
+  }
+  .drawer-handle {
+    width: 40px; height: 4px;
+    background: var(--border2);
+    border-radius: 2px;
+    margin: 12px auto 0;
+  }
+  .drawer-header {
+    padding: 14px 20px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg2);
+    z-index: 1;
+  }
+  .drawer-title { font-size: 15px; font-weight: 700; color: var(--text); }
+  .drawer-close {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    border: 1px solid var(--border2);
+    background: var(--bg3);
+    color: var(--text2);
+    font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  .drawer-body { padding: 16px 20px; }
+  .drawer-open-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border2);
+    background: var(--bg3);
+    color: var(--text2);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .drawer-open-btn:hover { border-color: var(--accent-border); color: var(--accent2); background: var(--accent-bg); }
+  .drawer-open-btn.has-data { border-color: var(--accent-border); color: var(--accent2); background: var(--accent-bg); }
+  @media (min-width: 900px) {
+    .drawer { max-width: 720px; }
+  }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -763,6 +838,17 @@
 <input type="file" id="file-input" accept="image/*,.pdf" multiple/>
 <input type="file" id="camera-input" accept="image/*" capture="environment" multiple/>
 
+<!-- Side drawer for Meals, Others, Copy from Day -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="day-drawer">
+  <div class="drawer-handle"></div>
+  <div class="drawer-header">
+    <div class="drawer-title" id="drawer-title"></div>
+    <div class="drawer-close" onclick="closeDrawer()">✕</div>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</div>
+
 <script>
 // ───────────────────────────────────────────────
 // CONFIG — replace with your deployed Apps Script URL
@@ -774,12 +860,12 @@ const SUBMIT_URL = 'https://script.google.com/macros/s/AKfycbwQYPyUrILcy8qbJtHeO
 // 1st cutoff: 26th prev month → 10th current month
 // 2nd cutoff: 11th → 25th current month
 // ───────────────────────────────────────────────
-function detectCutoff() {
-  const now = new Date();
-  const day = now.getDate();
-  const month = now.getMonth();
-  const year = now.getFullYear();
-
+// Resolve cutoff for any given date
+function resolveCutoffForDate(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDate(), month = d.getMonth(), year = d.getFullYear();
+  const MNAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const MSHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   let cutoffNum, cutoffMonth, cutoffYear;
   if (day >= 11 && day <= 25) {
     cutoffNum = '2nd'; cutoffMonth = month; cutoffYear = year;
@@ -790,15 +876,10 @@ function detectCutoff() {
   } else {
     cutoffNum = '1st'; cutoffMonth = month; cutoffYear = year;
   }
-
-  const MNAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const MSHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const prevMonth = MNAMES[(cutoffMonth - 1 + 12) % 12];
-
   const dateRange = cutoffNum === '1st'
     ? `26 ${prevMonth} – 10 ${MNAMES[cutoffMonth]} ${cutoffYear}`
     : `11 – 25 ${MNAMES[cutoffMonth]} ${cutoffYear}`;
-
   return {
     num: cutoffNum,
     month: MNAMES[cutoffMonth],
@@ -810,6 +891,32 @@ function detectCutoff() {
     folderMonth: `${MNAMES[cutoffMonth]} ${cutoffYear}`,
     folderCutoff: cutoffNum === '1st' ? '1st Cutoff (26th–10th)' : '2nd Cutoff (11th–25th)',
   };
+}
+
+// Detect filing cutoff based on today (used for UI display)
+function detectCutoff() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm   = String(now.getMonth()+1).padStart(2,'0');
+  const dd   = String(now.getDate()).padStart(2,'0');
+  return resolveCutoffForDate(`${yyyy}-${mm}-${dd}`);
+}
+
+// Detect cutoff based on expense dates entered — uses the MAJORITY date cutoff
+// If dates span multiple cutoffs, the one with more days wins
+// Dates from a different/older cutoff are tagged as "Previous Period"
+function detectCutoffFromDays(days) {
+  const dated = (days||[]).filter(d => d.date);
+  if (!dated.length) return detectCutoff();
+  const counts = {};
+  dated.forEach(d => {
+    const c = resolveCutoffForDate(d.date);
+    const key = c.label;
+    counts[key] = (counts[key] || { count:0, cutoff:c });
+    counts[key].count++;
+  });
+  // Return the cutoff with the most days
+  return Object.values(counts).sort((a,b) => b.count - a.count)[0].cutoff;
 }
 
 const CUTOFF = detectCutoff();
@@ -978,8 +1085,9 @@ function renderStep1(c,b) {
       <div class="field-label">Cutoff Period</div>
       <div style="background:var(--accent-bg);border:1px solid var(--accent-border);border-radius:var(--radius-sm);padding:11px 14px;display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-size:14px;font-weight:700;color:var(--accent2);">${CUTOFF.label}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px;">${CUTOFF.dateRange}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--accent2);" id="cutoff-label-display">${formData.days.length ? detectCutoffFromDays(formData.days).label : CUTOFF.label}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="cutoff-range-display">${formData.days.length ? detectCutoffFromDays(formData.days).dateRange : CUTOFF.dateRange}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:1px;">Auto-detected from your expense dates</div>
         </div>
         <div style="font-size:10px;color:var(--text3);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;">Auto-detected</div>
       </div>
@@ -1040,14 +1148,6 @@ function renderDayCard(day, idx) {
         <div class="field-label">Date</div>
         <input type="date" value="${day.date||''}" onchange="formData.days[${idx}].date=this.value;applyDefaultRoute(${idx},this.value);refreshDayHeader(${idx})"/>
       </div>
-      ${idx > 0 ? `
-      <div class="field" style="margin-bottom:10px;">
-        <div class="field-label">Copy from another day</div>
-        <select onchange="copyFromDay(${idx}, parseInt(this.value));this.value=''" style="background:var(--bg3);border:1px solid var(--accent-border);border-radius:var(--radius-sm);color:var(--accent2);font-size:13px;padding:9px 14px;width:100%;">
-          <option value="">— Select a day to copy —</option>
-          ${buildCopyOptions(idx)}
-        </select>
-      </div>` : ''}
       <div class="field">
         <div class="field-label">Destination <span style="font-weight:400;color:var(--text3);font-size:11px;">(shown on form — breakdown has full details)</span></div>
         <input type="text" value="${day.route||''}" placeholder="e.g. PTC Silang – Toclong II-B Imus" oninput="formData.days[${idx}].route=this.value"/>
@@ -1104,7 +1204,7 @@ function renderCommuteSections(day, idx) {
   return `
     ${legsHtml}
     <button class="add-btn" onclick="addLeg(${idx})">＋ Add Transport Leg</button>
-    ${renderMealsAndOthers(day, idx)}
+    ${renderDrawerButton(day, idx)}
   `;
 }
 
@@ -1150,7 +1250,7 @@ function renderVehicleSections(day, idx) {
 
   return `${vehs}
     <button class="add-btn" onclick="addVehicle(${idx})">＋ Add Vehicle Entry</button>
-    ${renderMealsAndOthers(day, idx)}`;
+    ${renderDrawerButton(day, idx)}`;
 }
 
 // Shared meals + other expenses section used by both commute and vehicle
@@ -1393,8 +1493,8 @@ function renderStep3(c,b) {
         <div class="review-row"><span class="review-key">Name</span><span class="review-val">${formData.requestor||'—'}</span></div>
         <div class="review-row"><span class="review-key">Department</span><span class="review-val">${formData.department||'—'}</span></div>
         <div class="review-row"><span class="review-key">Email</span><span class="review-val">${formData.email||'—'}</span></div>
-        <div class="review-row"><span class="review-key">Cutoff Period</span><span class="review-val">${CUTOFF.label}</span></div>
-        <div class="review-row"><span class="review-key">Date Range</span><span class="review-val">${CUTOFF.dateRange}</span></div>
+        <div class="review-row"><span class="review-key">Cutoff Period</span><span class="review-val">${detectCutoffFromDays(formData.days).label}</span></div>
+        <div class="review-row"><span class="review-key">Date Range</span><span class="review-val">${detectCutoffFromDays(formData.days).dateRange}</span></div>
       </div>
     </div>
 
@@ -1422,7 +1522,7 @@ function renderStep3(c,b) {
     <div class="grand-total" style="margin-bottom:8px;">
       <div>
         <div class="grand-total-label">Total Reimbursable Amount</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${formData.days.length} day(s) · ${CUTOFF.label}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${formData.days.length} day(s) · ${detectCutoffFromDays(formData.days).label}</div>
       </div>
       <div class="grand-total-val">${fmt(grandTotal())}</div>
     </div>
@@ -1445,7 +1545,7 @@ function renderStep4(c,b) {
     <div class="success-screen">
       <div class="success-icon">✓</div>
       <div class="success-title">You're all set!</div>
-      <div class="success-sub">Your reimbursement request has been submitted successfully. HR will review and process it for the <strong>${CUTOFF.label}</strong> payroll.</div>
+      <div class="success-sub">Your reimbursement request has been submitted successfully. HR will review and process it for the <strong>${detectCutoffFromDays(formData.days).label}</strong> payroll.</div>
       <div class="req-id-box">
         <div class="req-id-label">Request ID</div>
         <div class="req-id-val">${generatedReqId}</div>
@@ -1498,25 +1598,32 @@ function renderStep4(c,b) {
   `;
 }
 
-function downloadPdf() {
+async function downloadPdf() {
   const fname = pdfFilename('REIMBURSEMENT FORM', formData.requestor, new Date());
-  const html = buildPdfPreviewHtml();
-  // Create a printable window for download/print
-  const win = window.open('', '_blank');
-  win.document.write(`<!DOCTYPE html>
-    <html><head><meta charset="UTF-8"/>
-    <title>${fname}</title>
-    <style>
-      body { font-family: Arial, sans-serif; font-size: 10pt; margin: 20px; }
-      @media print {
-        @page { size: A4; margin: 18mm; }
-        body { margin: 0; }
-      }
-    </style>
-    </head><body>${html}
-    <script>window.onload=function(){window.print();}<\/script>
-    </body></html>`);
-  win.document.close();
+  const html  = buildPdfPreviewHtml();
+
+  const container = document.createElement('div');
+  container.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;background:#fff;font-family:Arial,sans-serif;font-size:10pt;color:#000;padding:24px;';
+  container.innerHTML = html;
+  document.body.appendChild(container);
+
+  const btn = document.querySelector('[onclick="downloadPdf()"]');
+  const orig = btn ? btn.textContent : '';
+  if(btn) { btn.textContent = 'Generating…'; btn.disabled = true; }
+
+  try {
+    await html2pdf().set({
+      margin:      [15, 15, 15, 15],
+      filename:    `${fname}.pdf`,
+      image:       { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak:   { mode: ['avoid-all', 'css', 'legacy'] },
+    }).from(container).save();
+  } finally {
+    document.body.removeChild(container);
+    if(btn) { btn.textContent = orig; btn.disabled = false; }
+  }
 }
 
 function showPdfPreview() {
@@ -1534,39 +1641,16 @@ function buildPdfPreviewHtml() {
   const fname = pdfFilename('REIMBURSEMENT FORM', formData.requestor, new Date());
   const bname = pdfFilename('REIMBURSEMENT BREAKDOWN', formData.requestor, new Date());
 
-  // Build rows for form
+  // Build form rows — destination/route only per day, full total
+  // Details (legs, meals, vehicles) are on the breakdown page
   let rows = '';
   (formData.days||[]).forEach(day => {
     const dLabel = day.date ? new Date(day.date+'T00:00:00').toLocaleDateString('en-PH',{day:'2-digit',month:'short',year:'2-digit'}) : '';
-    if(day.type==='commute') {
-      (day.legs||[]).forEach(leg => {
-        if(!leg.transport) return;
-        rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;">${leg.transport}: ${leg.from||''} – ${leg.to||''}</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">${fmtNum(leg.amount||0)}</td></tr>`;
-      });
-      if(day.meal_bf) rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;">Breakfast</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">185.00</td></tr>`;
-      if(day.meal_ln) rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;">Lunch</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">185.00</td></tr>`;
-    } else {
-      (day.vehicles||[]).forEach(v => {
-        const km2   = parseFloat(v.km)||0;
-        const fuel2 = parseFloat(v.fuel)||0;
-        const vt2   = VEHICLE_TYPES.find(x=>x.val===v.vtype);
-        const lbl2  = vt2 ? vt2.label : v.vtype;
-        let eff=0, liters2=0, maintRate2=0;
-        if(v.vtype==='company-2wheel'){ eff=30; liters2=km2/30; }
-        else if(v.vtype==='company-4wheel'){ eff=10; liters2=km2/10; }
-        else if(v.vtype==='private-2wheel'){ eff=25; liters2=km2/25; maintRate2=1; }
-        else if(v.vtype==='private-4wheel'){ eff=9;  liters2=km2/9;  maintRate2=3; }
-        const fuelAmt2  = liters2 * fuel2;
-        const maintAmt2 = km2 * maintRate2;
-        const total2    = fuelAmt2 + maintAmt2;
-        let parts2 = `GAS EXPENSE (${lbl2}) @ ₱${fuel2}/L — ${km2}km ÷ ${eff} = ${liters2.toFixed(2)}L × ₱${fuel2} = ₱${fmtNum(fuelAmt2)}`;
-        if(maintRate2 > 0) parts2 += ` + Maint: ${km2}km × ₱${maintRate2} = ₱${fmtNum(maintAmt2)}`;
-        rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;font-size:8.5pt;">${parts2}</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||v.note||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">${fmtNum(total2)}</td></tr>`;
-      });
-    }
+    const tot = dayTotal(day);
+    rows += `<tr style="background:#ffffdd"><td style="border:1px solid #000;padding:3px 6px;">${dLabel}</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||'Transportation'}</td><td style="border:1px solid #000;padding:3px 6px;">${day.route||''}</td><td style="border:1px solid #000;padding:3px 6px;text-align:right;">${fmtNum(tot)}</td></tr>`;
   });
-  // Empty rows
-  const rowCount = (rows.match(/<tr/g)||[]).length;
+  // Empty rows to fill table
+  const rowCount = (formData.days||[]).length;
   for(let i=rowCount; i<12; i++) rows += '<tr style="background:#ffffdd"><td style="border:1px solid #000;height:18px;"> </td><td style="border:1px solid #000;"> </td><td style="border:1px solid #000;"> </td><td style="border:1px solid #000;"> </td></tr>';
 
   // Build breakdown days
@@ -1650,7 +1734,7 @@ function buildPdfPreviewHtml() {
   <div style="font-family:Arial,sans-serif;font-size:10pt;color:#000;background:#fff;padding:16px;border-radius:8px;margin-bottom:8px;">
     <div style="font-size:13pt;font-weight:bold;margin-bottom:4px;">Reimbursement Breakdown</div>
     <div style="font-size:9pt;color:#555;margin-bottom:12px;border-bottom:1px solid #ccc;padding-bottom:8px;">
-      <strong>Name:</strong> ${formData.requestor} &nbsp;|&nbsp; <strong>Dept:</strong> ${formData.department} &nbsp;|&nbsp; <strong>Cutoff:</strong> ${CUTOFF.label} &nbsp;|&nbsp; <strong>Ref:</strong> ${generatedReqId}
+      <strong>Name:</strong> ${formData.requestor} &nbsp;|&nbsp; <strong>Dept:</strong> ${formData.department} &nbsp;|&nbsp; <strong>Cutoff:</strong> ${detectCutoffFromDays(formData.days).label} &nbsp;|&nbsp; <strong>Ref:</strong> ${generatedReqId}
     </div>
     ${breakdown}
     <div style="text-align:right;font-weight:bold;font-size:12pt;border-top:2px solid #000;padding-top:8px;">TOTAL: ₱${fmtNum(grandTotal())}</div>
@@ -1762,6 +1846,154 @@ function buildMaintLine(v) {
   if(v.vtype==='private-2wheel') return ` → Maint: ${km}km × ₱1 = <strong>${fmt(km*1)}</strong>`;
   if(v.vtype==='private-4wheel') return ` → Maint: ${km}km × ₱3 = <strong>${fmt(km*3)}</strong>`;
   return '';
+}
+
+// Returns a summary badge showing meals/others count for the drawer button
+function getDayExtrasCount(day) {
+  let count = 0;
+  if(day.meal_bf) count++;
+  if(day.meal_ln) count++;
+  if(day.meal_dn) count++;
+  count += (day.others||[]).filter(o=>o.desc).length;
+  return count;
+}
+
+function renderDrawerButton(day, idx) {
+  const count = getDayExtrasCount(day);
+  const hasCopy = idx > 0;
+  const hasData = count > 0;
+  const label = hasData ? `Meals & Extras (${count})` : 'Meals & Other Expenses';
+  return `<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+    <button class="drawer-open-btn ${hasData?'has-data':''}" onclick="openDrawer(${idx})">
+      🍽️ ${label}
+    </button>
+    ${hasCopy ? `<button class="drawer-open-btn" onclick="openDrawerCopy(${idx})">📋 Copy from Day</button>` : ''}
+  </div>`;
+}
+
+let drawerDayIdx = null;
+
+function openDrawer(idx) {
+  drawerDayIdx = idx;
+  const day = formData.days[idx];
+  document.getElementById('drawer-title').textContent = `Day ${idx+1} — Meals & Extras`;
+  document.getElementById('drawer-body').innerHTML = renderDrawerContent(day, idx);
+  document.getElementById('drawer-overlay').classList.add('open');
+  document.getElementById('day-drawer').classList.add('open');
+  document.getElementById('day-drawer').scrollTop = 0;
+}
+
+function openDrawerCopy(idx) {
+  drawerDayIdx = idx;
+  document.getElementById('drawer-title').textContent = `Day ${idx+1} — Copy from Day`;
+  document.getElementById('drawer-body').innerHTML = renderDrawerCopy(idx);
+  document.getElementById('drawer-overlay').classList.add('open');
+  document.getElementById('day-drawer').classList.add('open');
+}
+
+function closeDrawer() {
+  document.getElementById('drawer-overlay').classList.remove('open');
+  document.getElementById('day-drawer').classList.remove('open');
+  // Refresh the day card to reflect any changes
+  if(drawerDayIdx !== null) {
+    const scrollY = document.getElementById('content').scrollTop;
+    render();
+    requestAnimationFrame(()=>{ document.getElementById('content').scrollTop = scrollY; });
+  }
+  drawerDayIdx = null;
+}
+
+function renderDrawerContent(day, idx) {
+  const others = (day.others||[]);
+  const othersHtml = others.map((o,oi) => `
+    <div class="leg-row" style="margin-bottom:10px;">
+      <div class="leg-row-header">
+        <div class="leg-num">Other ${oi+1}</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <div class="leg-amount">${o.amount>0?fmt(o.amount):'₱—'}</div>
+          <div class="remove-btn" onclick="removeOtherDrawer(${idx},${oi})">✕</div>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <div class="field-label" style="margin-bottom:4px;">Description</div>
+        <input type="text" value="${o.desc||''}" placeholder="e.g. Gas, Subscription, Toll fee"
+          oninput="formData.days[${idx}].others[${oi}].desc=this.value"/>
+      </div>
+      <div class="field" style="margin:0;">
+        <div class="field-label" style="margin-bottom:4px;">Amount (₱)</div>
+        <input type="text" inputmode="decimal" value="${o.amount||''}" placeholder="0.00"
+          oninput="formData.days[${idx}].others[${oi}].amount=parseFloat(this.value)||0"/>
+      </div>
+    </div>`).join('');
+
+  return `
+    <div style="margin-bottom:14px;">
+      <div class="field-label" style="margin-bottom:10px;">Meals (Onsite/Field Work)</div>
+      <div class="meal-row">
+        <div class="meal-left">
+          <input type="checkbox" ${day.meal_bf?'checked':''} onchange="formData.days[${idx}].meal_bf=this.checked;updateDrawerMealTotal(${idx})"/>
+          <div><div class="meal-label">Breakfast</div><div class="meal-sub">₱185.00 flat rate</div></div>
+        </div>
+        <div class="meal-amount">₱185.00</div>
+      </div>
+      <div class="meal-row">
+        <div class="meal-left">
+          <input type="checkbox" ${day.meal_ln?'checked':''} onchange="formData.days[${idx}].meal_ln=this.checked;updateDrawerMealTotal(${idx})"/>
+          <div><div class="meal-label">Lunch</div><div class="meal-sub">₱185.00 flat rate</div></div>
+        </div>
+        <div class="meal-amount">₱185.00</div>
+      </div>
+      <div class="meal-row">
+        <div class="meal-left">
+          <input type="checkbox" ${day.meal_dn?'checked':''} onchange="formData.days[${idx}].meal_dn=this.checked;updateDrawerMealTotal(${idx})"/>
+          <div><div class="meal-label">Dinner</div><div class="meal-sub">₱185.00 flat rate</div></div>
+        </div>
+        <div class="meal-amount">₱185.00</div>
+      </div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:14px 0;"/>
+    <div class="field-label" style="margin-bottom:10px;">Other Expenses <span style="font-weight:400;color:var(--text3);">(Gas, Subscription, Toll, etc.)</span></div>
+    <div id="drawer-others-${idx}">${othersHtml}</div>
+    <button class="add-btn" onclick="addOtherDrawer(${idx})">＋ Add Other Expense</button>
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+      <button onclick="closeDrawer()" style="width:100%;padding:13px;border-radius:var(--radius);border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">Done</button>
+    </div>`;
+}
+
+function renderDrawerCopy(idx) {
+  return `
+    <div class="field">
+      <div class="field-label" style="margin-bottom:8px;">Select a day to copy from</div>
+      <select onchange="copyFromDay(${idx}, parseInt(this.value));closeDrawer()"
+        style="background:var(--bg3);border:1px solid var(--accent-border);border-radius:var(--radius-sm);color:var(--accent2);font-size:13px;padding:11px 14px;width:100%;">
+        <option value="">— Select a day —</option>
+        ${buildCopyOptions(idx)}
+      </select>
+    </div>
+    <div style="font-size:12px;color:var(--text3);margin-top:8px;">Copies route, type, legs, meals, and other expenses. Your date is preserved.</div>`;
+}
+
+function addOtherDrawer(idx) {
+  if(!formData.days[idx].others) formData.days[idx].others=[];
+  formData.days[idx].others.push({ desc:'', amount:0 });
+  // Re-render just the drawer body
+  document.getElementById('drawer-body').innerHTML = renderDrawerContent(formData.days[idx], idx);
+}
+
+function removeOtherDrawer(idx, oi) {
+  formData.days[idx].others.splice(oi,1);
+  document.getElementById('drawer-body').innerHTML = renderDrawerContent(formData.days[idx], idx);
+}
+
+function updateDrawerMealTotal(idx) {
+  // Just update totals without closing drawer
+  const dayTotalEl = document.querySelector('#day-card-' + idx + ' .day-total');
+  const subtotalEl = document.querySelector('#day-card-' + idx + ' .day-subtotal-val');
+  const grandEl    = document.querySelector('.grand-total-val');
+  const tot = dayTotal(formData.days[idx]);
+  if(dayTotalEl) dayTotalEl.textContent = fmt(tot);
+  if(subtotalEl) subtotalEl.textContent = fmt(tot);
+  if(grandEl)    grandEl.textContent    = fmt(grandTotal());
 }
 
 function buildCopyOptions(targetIdx) {
@@ -1912,44 +2144,33 @@ function goStep(n) {
 }
 
 // Returns {start, end} Date objects for the current cutoff window
-function getCutoffWindow() {
-  // 1st cutoff: 26th of prev month → 10th of cutoff month
-  // 2nd cutoff: 11th → 25th of cutoff month
-  const m = CUTOFF.monthIndex;
-  const y = CUTOFF.year;
-  if (CUTOFF.num === '1st') {
-    const prevM = (m - 1 + 12) % 12;
-    const prevY = m === 0 ? y - 1 : y;
-    return { start: new Date(prevY, prevM, 26), end: new Date(y, m, 10) };
-  } else {
-    return { start: new Date(y, m, 11), end: new Date(y, m, 25) };
-  }
-}
-
 function validateStep1() {
   let ok=true;
   const show=(id,show)=>{ const e=document.getElementById(id); if(e) e.className='err'+(show?' show':''); };
   const nameValid = EMPLOYEES.includes(formData.requestor.trim());
   if(!nameValid){ show('err-name',true); ok=false; } else show('err-name',false);
-  // Department is always DevOps — no validation needed
   if(!formData.email.match(/^[^@]+@[^@]+\.[^@]+$/)){ show('err-email',true); ok=false; } else show('err-email',false);
   if(!ok) return;
   if(formData.days.length===0){ alert('Please add at least one expense day.'); return; }
 
-  // Validate all dates fall within the current cutoff window
-  const win = getCutoffWindow();
-  const badDates = [];
-  formData.days.forEach((day, i) => {
-    if(!day.date) return;
-    const d = new Date(day.date + 'T00:00:00');
-    if(d < win.start || d > win.end) {
-      badDates.push(`Day ${i+1} (${day.date})`);
-    }
+  // Detect filing cutoff from the expense dates themselves
+  // No blocking — dates from previous periods are allowed (tagged as Previous Period)
+  const filingCutoff = detectCutoffFromDays(formData.days);
+  formData.cutoff = filingCutoff.num;
+
+  // Tag each day with its own cutoff — days that don't match the filing cutoff = Previous Period
+  formData.days.forEach(day => {
+    if (!day.date) return;
+    const dc = resolveCutoffForDate(day.date);
+    day.periodTag = dc.label === filingCutoff.label ? null : 'Previous Period';
   });
-  if(badDates.length > 0) {
-    const winStr = CUTOFF.dateRange;
-    alert(`The following day(s) are outside the ${CUTOFF.label} period (${winStr}):\n\n${badDates.join('\n')}\n\nPlease correct the dates or submit under the right cutoff period.`);
-    return;
+
+  // Count previous period days for info
+  const prevDays = formData.days.filter(d => d.periodTag === 'Previous Period');
+  if (prevDays.length > 0) {
+    const names = prevDays.map((d,i) => `  • ${d.date} (${resolveCutoffForDate(d.date).label})`).join('\n');
+    const msg = `ℹ️ Your submission includes ${prevDays.length} day(s) from a previous cutoff period:\n\n${names}\n\nThese will be tagged as "Previous Period" in your breakdown. Tap OK to continue.`;
+    if (!confirm(msg)) return;
   }
 
   goStep(2);
@@ -1981,11 +2202,16 @@ async function submitForm() {
   const btn = document.querySelector('.btn-continue');
   if(btn){ btn.textContent = 'Submitting…'; btn.disabled = true; }
 
+  // Detect cutoff from expense dates — not from today's filing date
+  const detectedCutoff = detectCutoffFromDays(formData.days);
   const payload = {
     requestor: formData.requestor,
     department: formData.department,
     email: formData.email,
-    cutoff: formData.cutoff,
+    cutoff: detectedCutoff.num,
+    cutoffLabel: detectedCutoff.label,
+    cutoffMonth: detectedCutoff.month,
+    cutoffYear: detectedCutoff.year,
     days: formData.days,
     receipts: receipts,
   };
